@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/">
+<channel><title>Guitar tips</title>
+  <item>
+    <title>Three exercises for cleaner chord changes</title>
+    <link>https://guitar.example.org/clean-changes</link>
+    <pubDate>RECENT_RFC</pubDate>
+    <description><![CDATA[<img src="https://guitar.example.org/img.jpg"><p>Start slow. Anchor fingers matter more than speed.</p>]]></description>
+  </item>
+  <item>
+    <title>Sponsored: buy our course</title>
+    <link>https://guitar.example.org/ad</link>
+    <pubDate>RECENT_RFC</pubDate>
+    <description>Discount inside</description>
+  </item>
+</channel></rss>

@@ -1,0 +1,310 @@
+// Fetches articles from configured sources. Filtering is rules + community scores, not an LLM.
+import { XMLParser } from 'fast-xml-parser';
+
+const UA = 'Sift/0.1 (personal feed reader)';
+const DAY = 86400000;
+
+export const SOURCE_KINDS = {
+  rss: {
+    label: 'RSS / Atom feed',
+    description: 'Any RSS or Atom feed: blogs, Substack (/feed), YouTube channels (youtube.com/feeds/videos.xml?channel_id=…), arXiv, podcasts.',
+    fields: [
+      { key: 'url', label: 'Feed URL', type: 'text', default: '' },
+      { key: 'max_age_days', label: 'Ignore posts older than (days)', type: 'number', default: 14 },
+    ],
+  },
+  hn: {
+    label: 'Hacker News',
+    description: 'Popular HN stories. Use the keyword filter to keep only those on your topic.',
+    fields: [
+      { key: 'min_points', label: 'Minimum points', type: 'number', default: 150 },
+      { key: 'days', label: 'Look back (days)', type: 'number', default: 3 },
+    ],
+  },
+  reddit: {
+    label: 'Subreddit',
+    description: 'Top posts from a subreddit. Only posts above the score threshold are kept.',
+    fields: [
+      { key: 'subreddit', label: 'Subreddit (without r/)', type: 'text', default: '' },
+      { key: 'period', label: 'Top of the', type: 'select', options: ['day', 'week', 'month'], default: 'week' },
+      { key: 'limit', label: 'Max posts per fetch', type: 'number', default: 15 },
+      { key: 'min_score', label: 'Minimum upvotes', type: 'number', default: 50 },
+    ],
+  },
+};
+
+// ---------- text helpers ----------
+const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', hellip: '…', mdash: '—', ndash: '–', rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“', laquo: '«', raquo: '»' };
+export function decodeEntities(s) {
+  return s.replace(/&(#x[0-9a-f]+|#\d+|[a-z]+);/gi, (m, e) => {
+    if (e[0] === '#') {
+      const n = e[1] === 'x' || e[1] === 'X' ? parseInt(e.slice(2), 16) : parseInt(e.slice(1), 10);
+      return Number.isFinite(n) ? String.fromCodePoint(n) : m;
+    }
+    return ENTITIES[e.toLowerCase()] ?? m;
+  });
+}
+export function htmlToText(html) {
+  if (!html) return '';
+  return decodeEntities(String(html)
+    .replace(/<(script|style)[\s\S]*?<\/\1>/gi, ' ')
+    .replace(/<!--[\s\S]*?-->/g, ' ')
+    .replace(/<\/(p|div|li|h\d|blockquote)>|<br\s*\/?>/gi, '\n')
+    .replace(/<[^>]+>/g, ' '))
+    .replace(/[ \t ]+/g, ' ')
+    .replace(/\s*\n\s*/g, '\n')
+    .replace(/\n{2,}/g, '\n')
+    .trim();
+}
+export function truncate(text, max = 420) {
+  const t = text.replace(/\n+/g, ' ').trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  const sentence = cut.lastIndexOf('. ');
+  if (sentence > max * 0.6) return cut.slice(0, sentence + 1);
+  return cut.slice(0, cut.lastIndexOf(' ')).replace(/[,;:\-–—]$/, '') + '…';
+}
+export function normaliseUrl(u) {
+  try {
+    const url = new URL(u);
+    url.hash = '';
+    url.hostname = url.hostname.replace(/^www\.|^old\.|^m\./, '');
+    for (const k of [...url.searchParams.keys()]) {
+      if (/^(utm_|ref$|ref_src$|fbclid$|gclid$|mc_|source$)/i.test(k)) url.searchParams.delete(k);
+    }
+    url.protocol = 'https:';
+    if (url.pathname.length > 1) url.pathname = url.pathname.replace(/\/+$/, '');
+    return url.toString();
+  } catch {
+    return u;
+  }
+}
+export const titleKey = (t) => t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+const domainOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return null; } };
+const kwList = (s) => String(s || '').split(',').map((k) => k.trim()).filter(Boolean);
+const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+export function keywordRegex(keywords) {
+  const kws = kwList(keywords);
+  if (!kws.length) return null;
+  return new RegExp(`(?<![\\p{L}\\p{N}])(${kws.map(escapeRe).join('|')})(?![\\p{L}\\p{N}])`, 'iu');
+}
+
+// ---------- HTTP ----------
+async function get(url, { timeout = 15000, maxBytes = 3_000_000, accept } = {}) {
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), timeout);
+  try {
+    const res = await fetch(url, { signal: ctl.signal, redirect: 'follow', headers: { 'User-Agent': UA, ...(accept ? { Accept: accept } : {}) } });
+    if (!res.ok) throw new Error(`HTTP ${res.status} from ${new URL(url).hostname}`);
+    const reader = res.body.getReader();
+    const chunks = [];
+    let size = 0;
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      chunks.push(value);
+      size += value.length;
+      if (size > maxBytes) { ctl.abort(); break; }
+    }
+    return Buffer.concat(chunks).toString('utf8');
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ---------- parsers ----------
+const xml = new XMLParser({ ignoreAttributes: false, attributeNamePrefix: '@', textNodeName: '#text', processEntities: true, htmlEntities: true, removeNSPrefix: false });
+const arr = (x) => (x == null ? [] : Array.isArray(x) ? x : [x]);
+const txt = (x) => (x == null ? '' : typeof x === 'object' ? String(x['#text'] ?? '') : String(x));
+
+export function parseFeed(body) {
+  const doc = xml.parse(body);
+  const out = [];
+  if (doc.rss || doc['rdf:RDF']) {
+    const items = doc.rss ? arr(doc.rss.channel?.item) : arr(doc['rdf:RDF'].item);
+    for (const it of items) {
+      const html = txt(it['content:encoded']) || txt(it.description);
+      const img = arr(it['media:thumbnail'])[0]?.['@url'] || arr(it['media:content']).find((m) => /image/.test(m?.['@type'] || 'image'))?.['@url']
+        || arr(it.enclosure).find((e) => /^image\//.test(e?.['@type'] || ''))?.['@url'] || firstImage(html);
+      out.push({
+        title: txt(it.title), url: txt(it.link) || txt(it.guid), html,
+        published: Date.parse(txt(it.pubDate) || txt(it['dc:date'])) || null, image: img || null,
+        comments_url: txt(it.comments) || null,
+      });
+    }
+  } else if (doc.feed) {
+    for (const e of arr(doc.feed.entry)) {
+      const links = arr(e.link);
+      const link = links.find((l) => !l['@rel'] || l['@rel'] === 'alternate') || links[0];
+      const group = e['media:group'] || {};
+      const html = txt(e.content) || txt(e.summary) || txt(group['media:description']);
+      out.push({
+        title: txt(e.title), url: link?.['@href'] || txt(e.id), html,
+        published: Date.parse(txt(e.published) || txt(e.updated)) || null,
+        image: arr(group['media:thumbnail'])[0]?.['@url'] || arr(e['media:thumbnail'])[0]?.['@url'] || firstImage(html) || null,
+      });
+    }
+  } else {
+    throw new Error('Not an RSS or Atom feed');
+  }
+  return out.filter((i) => i.title && i.url);
+}
+function firstImage(html) {
+  const m = /<img[^>]+src=["']([^"']+)["']/i.exec(html || '');
+  return m && /^https?:/.test(m[1]) ? decodeEntities(m[1]) : null;
+}
+
+// ---------- source fetchers: return normalised candidate items ----------
+async function fetchRss(cfg) {
+  if (!cfg.url) throw new Error('Feed URL is required');
+  const items = parseFeed(await get(cfg.url, { accept: 'application/rss+xml, application/atom+xml, application/xml, text/xml' }));
+  const cutoff = Date.now() - (Number(cfg.max_age_days) || 14) * DAY;
+  return items
+    .filter((i) => !i.published || i.published >= cutoff)
+    .slice(0, 40)
+    .map((i) => ({ title: htmlToText(i.title), url: i.url, summary: truncate(htmlToText(i.html)), image: i.image, published: i.published || Date.now(), comments_url: i.comments_url }));
+}
+
+async function fetchHn(cfg) {
+  const since = Math.floor((Date.now() - (Number(cfg.days) || 3) * DAY) / 1000);
+  const url = `https://hn.algolia.com/api/v1/search?tags=story&hitsPerPage=200&numericFilters=points>=${Number(cfg.min_points) || 100},created_at_i>${since}`;
+  const data = JSON.parse(await get(url));
+  return data.hits.map((h) => ({
+    title: h.title,
+    url: h.url || `https://news.ycombinator.com/item?id=${h.objectID}`,
+    summary: truncate(htmlToText(h.story_text || '')),
+    published: h.created_at_i * 1000,
+    community_score: h.points,
+    comment_count: h.num_comments,
+    comments_url: `https://news.ycombinator.com/item?id=${h.objectID}`,
+  }));
+}
+
+async function fetchReddit(cfg) {
+  const sub = String(cfg.subreddit || '').replace(/^\/?r\//, '').trim();
+  if (!sub) throw new Error('Subreddit is required');
+  const period = ['day', 'week', 'month', 'year'].includes(cfg.period) ? cfg.period : 'week';
+  const limit = Math.min(Number(cfg.limit) || 15, 50);
+  const minScore = Number(cfg.min_score) || 0;
+  try {
+    const data = JSON.parse(await get(`https://www.reddit.com/r/${sub}/top.json?t=${period}&limit=${limit}&raw_json=1`));
+    return data.data.children.map((c) => c.data)
+      .filter((p) => !p.stickied && !p.over_18 && p.score >= minScore)
+      .map((p) => {
+        const permalink = `https://www.reddit.com${p.permalink}`;
+        const external = !p.is_self && p.url && !/reddit\.com|redd\.it/.test(p.url);
+        const img = p.preview?.images?.[0]?.source?.url;
+        return {
+          title: p.title, url: external ? p.url : permalink,
+          summary: truncate(p.selftext || ''), image: img || (/^https?:/.test(p.thumbnail || '') ? p.thumbnail : null),
+          published: p.created_utc * 1000, community_score: p.score, comment_count: p.num_comments, comments_url: permalink,
+        };
+      });
+  } catch (err) {
+    // Reddit often blocks the JSON API for servers; the RSS feed is the fallback (no scores, so no threshold).
+    const items = parseFeed(await get(`https://www.reddit.com/r/${sub}/top/.rss?t=${period}&limit=${limit}`));
+    return items.map((i) => {
+      const linkMatch = /<a href="([^"]+)">\[link\]<\/a>/.exec(i.html || '');
+      const external = linkMatch && !/reddit\.com|redd\.it/.test(linkMatch[1]) ? decodeEntities(linkMatch[1]) : null;
+      const body = htmlToText((i.html || '').replace(/<a href="[^"]*">\[(link|comments)\]<\/a>/g, '')).replace(/submitted by\s+\/u\/\S+/i, '').trim();
+      return { title: i.title, url: external || i.url, summary: truncate(body), image: i.image, published: i.published || Date.now(), comments_url: i.url };
+    });
+  }
+}
+
+const FETCHERS = { rss: fetchRss, hn: fetchHn, reddit: fetchReddit };
+
+/** Fetch + filter a source definition without saving. */
+export async function previewSource(src) {
+  const cfg = typeof src.config === 'string' ? JSON.parse(src.config || '{}') : src.config || {};
+  const fetcher = FETCHERS[src.kind];
+  if (!fetcher) throw new Error(`Unknown source kind: ${src.kind}`);
+  const items = await fetcher(cfg);
+  const inc = keywordRegex(src.include);
+  const exc = keywordRegex(src.exclude);
+  return items.filter((i) => {
+    const hay = `${i.title}\n${i.summary || ''}`;
+    if (inc && !inc.test(src.kind === 'hn' ? i.title : hay)) return false;
+    if (exc && exc.test(hay)) return false;
+    return true;
+  });
+}
+
+// ---------- persistence ----------
+export async function fetchSource(db, src) {
+  let added = 0;
+  try {
+    const items = await previewSource(src);
+    const ins = db.prepare(`INSERT OR IGNORE INTO items
+      (source_id, topic_id, url, title, title_key, summary, image, domain, comments_url, community_score, comment_count, published_at, fetched_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+    const dupTitle = db.prepare('SELECT 1 FROM items WHERE title_key = ? AND fetched_at > ? LIMIT 1');
+    const upd = db.prepare('UPDATE items SET community_score = ?, comment_count = ? WHERE url = ?');
+    const now = Date.now();
+    for (const i of items) {
+      const url = normaliseUrl(i.url);
+      const key = titleKey(i.title);
+      if (!key) continue;
+      if (i.community_score != null) upd.run(i.community_score, i.comment_count ?? null, url);
+      if (dupTitle.get(key, now - 14 * DAY)) continue;
+      const r = ins.run(src.id, src.topic_id, url, i.title.trim(), key, i.summary || '', i.image || null, domainOf(url),
+        i.comments_url || null, i.community_score ?? null, i.comment_count ?? null, Math.min(i.published || now, now), now);
+      added += Number(r.changes);
+    }
+    db.prepare('UPDATE sources SET last_fetched = ?, last_error = NULL WHERE id = ?').run(now, src.id);
+  } catch (err) {
+    db.prepare('UPDATE sources SET last_fetched = ?, last_error = ? WHERE id = ?').run(Date.now(), String(err.message || err), src.id);
+    return { added, error: String(err.message || err) };
+  }
+  return { added };
+}
+
+/** Fill in missing summaries from the page's meta description (cheap, capped per run). */
+export async function enrichSummaries(db, limit = 25) {
+  const rows = db.prepare(`SELECT id, url FROM items WHERE summary = '' AND seen_at IS NULL AND url NOT LIKE '%news.ycombinator.com%'
+    AND url NOT LIKE '%reddit.com%' ORDER BY fetched_at DESC LIMIT ?`).all(limit);
+  const upd = db.prepare('UPDATE items SET summary = ?, image = COALESCE(image, ?) WHERE id = ?');
+  let i = 0;
+  const worker = async () => {
+    while (i < rows.length) {
+      const row = rows[i++];
+      try {
+        const html = await get(row.url, { timeout: 8000, maxBytes: 400_000, accept: 'text/html' });
+        const meta = (name) => {
+          const re = new RegExp(`<meta[^>]+(?:property|name)=["']${name}["'][^>]*>`, 'i');
+          const tag = re.exec(html)?.[0];
+          return tag ? decodeEntities(/content=["']([^"']*)["']/i.exec(tag)?.[1] || '') : '';
+        };
+        const desc = meta('og:description') || meta('description') || meta('twitter:description');
+        const img = meta('og:image');
+        upd.run(truncate(htmlToText(desc)) || ' ', /^https?:/.test(img) ? img : null, row.id);
+      } catch {
+        upd.run(' ', null, row.id); // don't retry forever
+      }
+    }
+  };
+  await Promise.all([worker(), worker(), worker(), worker()]);
+}
+
+let running = null;
+export function fetchAll(db) {
+  if (running) return running;
+  running = (async () => {
+    const sources = db.prepare('SELECT * FROM sources WHERE enabled = 1').all();
+    const results = {};
+    let idx = 0;
+    const worker = async () => {
+      while (idx < sources.length) {
+        const s = sources[idx++];
+        results[s.name] = await fetchSource(db, s);
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    await enrichSummaries(db);
+    // Housekeeping: drop old, unsaved items.
+    const now = Date.now();
+    db.prepare('DELETE FROM items WHERE saved_at IS NULL AND ((seen_at IS NOT NULL AND seen_at < ?) OR fetched_at < ?)').run(now - 30 * DAY, now - 60 * DAY);
+    return results;
+  })().finally(() => { running = null; });
+  return running;
+}

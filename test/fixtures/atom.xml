@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom" xmlns:media="http://search.yahoo.com/mrss/">
+  <title>Example blog</title>
+  <entry>
+    <title>Running a 7B model on a phone &amp; why it matters</title>
+    <link rel="alternate" href="https://www.example.com/posts/phone-llm/?utm_source=rss"/>
+    <published>RECENT</published>
+    <summary type="html">&lt;p&gt;Quantisation has gotten good enough that &lt;b&gt;local inference&lt;/b&gt; is practical.&lt;/p&gt;</summary>
+  </entry>
+  <entry>
+    <title>Old post</title>
+    <link href="https://example.com/old"/>
+    <published>2020-01-01T00:00:00Z</published>
+    <summary>Ancient.</summary>
+  </entry>
+</feed>

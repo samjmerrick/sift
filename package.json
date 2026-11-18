@@ -1,0 +1,19 @@
+{
+  "name": "sift",
+  "version": "0.1.0",
+  "description": "A personal, LLM-free, infinitely scrolling feed of useful things to read and practise.",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node --no-warnings=ExperimentalWarning src/server.js",
+    "fetch": "node --no-warnings=ExperimentalWarning src/fetch-once.js",
+    "test": "node --no-warnings=ExperimentalWarning --test test/*.test.js"
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "fast-xml-parser": "^5.12.1"
+  }
+}
