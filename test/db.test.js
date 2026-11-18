@@ -20,7 +20,22 @@ test('anonymous role cannot read or write anything', async () => {
   }
 });
 
-test('signed-in user can use tables, views and feed_state', async () => {
+test('a signed-in account that is not the owner sees and changes nothing', async () => {
+  const stranger = '00000000-0000-0000-0000-0000000000ff';
+  await asUser(sql, async (tx) => {
+    assert.equal((await tx`select * from topics`).length, 0);
+    assert.equal((await tx`select * from source_stats`).length, 0);
+    const [{ feed_state: state }] = await tx`select feed_state()`;
+    assert.equal(state.topics.length, 0);
+    assert.equal(state.items.length, 0);
+    assert.equal((await tx`update topics set name = 'hacked' returning id`).length, 0);
+  }, stranger);
+  await assert.rejects(asUser(sql, (tx) => tx`insert into decks (name) values ('x')`, stranger), /row-level security/);
+  const owners = await asUser(sql, (tx) => tx`select * from app_owner`, stranger).catch(() => []);
+  assert.equal(owners.length, 0, 'owner table is not readable');
+});
+
+test('owner can use tables, views and feed_state', async () => {
   await asUser(sql, async (tx) => {
     const [deck] = await tx`insert into decks (name) values ('Test deck') returning id`;
     await tx`insert into cards (deck_id, front, back) values (${deck.id}, 'a', 'b')`;

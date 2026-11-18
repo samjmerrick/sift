@@ -1,5 +1,17 @@
--- Sift schema. Single-user: every table is readable/writable by any *authenticated* user and nobody else,
--- so disable public sign-ups in Supabase (Authentication → Sign In / Providers) and create just your own user.
+-- Sift schema. Single-user: every table is readable/writable only by the account listed in app_owner.
+-- After creating your user (Authentication → Users), register it as the owner:
+--   insert into app_owner (user_id) select id from auth.users where email = 'you@example.com';
+
+-- The one account allowed to use this Sift. RLS on with no policies: invisible to API clients.
+create table app_owner (user_id uuid primary key);
+alter table app_owner enable row level security;
+
+create function is_owner() returns boolean
+language sql stable security definer
+set search_path = ''
+as $$ select exists (select 1 from public.app_owner where user_id = auth.uid()) $$;
+revoke execute on function is_owner() from public, anon;
+grant execute on function is_owner() to authenticated;
 
 create table topics (
   id bigint generated always as identity primary key,
@@ -86,13 +98,13 @@ create table saved_cards (
   saved_at timestamptz not null default now()
 );
 
--- Row level security: signed-in user only.
+-- Row level security: the owner only. Other accounts (if sign-ups are left on) see and change nothing.
 do $$
 declare t text;
 begin
   foreach t in array array['topics', 'sources', 'items', 'generators', 'decks', 'cards', 'saved_cards'] loop
     execute format('alter table %I enable row level security', t);
-    execute format('create policy "owner only" on %I for all to authenticated using (true) with check (true)', t);
+    execute format('create policy "owner only" on %I for all to authenticated using ((select public.is_owner())) with check ((select public.is_owner()))', t);
     execute format('grant select, insert, update, delete on %I to authenticated', t);
   end loop;
 end $$;

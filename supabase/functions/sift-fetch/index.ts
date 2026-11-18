@@ -1,9 +1,10 @@
-// Edge Function used by the Settings screen: preview a source, fetch one source, or fetch everything now.
-// The hourly fetch runs in GitHub Actions (scripts/fetch.js) using the same shared code.
+// Edge Function:
+//  - called by the Settings screen (as the signed-in owner): preview a source, fetch one source, fetch everything now;
+//  - called hourly by pg_cron (see migration *_cron.sql) with a secret kept in Supabase Vault: fetch everything.
 import postgres from 'postgres';
 import { createClient } from '@supabase/supabase-js';
 import { previewSource } from '../_shared/fetcher.js';
-import { fetchSource, fetchAll } from '../_shared/store.js';
+import { fetchSource, fetchAll, enrichSummaries } from '../_shared/store.js';
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -13,17 +14,36 @@ const cors = {
 const json = (data: unknown, status = 200) =>
   new Response(JSON.stringify(data), { status, headers: { ...cors, 'Content-Type': 'application/json' } });
 
+const safeEqual = (a: string, b: string) => {
+  if (a.length !== b.length) return false;
+  let diff = 0;
+  for (let i = 0; i < a.length; i++) diff |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return diff === 0;
+};
+
 const sql = postgres(Deno.env.get('SUPABASE_DB_URL')!, { max: 3, prepare: false });
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: cors });
   if (req.method !== 'POST') return json({ error: 'POST only' }, 405);
 
-  // Only signed-in users (with sign-ups disabled, that's just you).
+  // Hourly job from pg_cron.
+  const cronSecret = req.headers.get('x-cron-secret');
+  if (cronSecret) {
+    const [row] = await sql`select decrypted_secret from vault.decrypted_secrets where name = 'sift_cron_secret'`;
+    if (!row?.decrypted_secret || !safeEqual(cronSecret, row.decrypted_secret)) return json({ error: 'Bad cron secret' }, 401);
+    const results = await fetchAll(sql, { enrich: false });
+    await enrichSummaries(sql, 12);
+    return json(results);
+  }
+
+  // Only the owner account (see app_owner in the schema).
   const token = (req.headers.get('Authorization') ?? '').replace(/^Bearer\s+/i, '');
   const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!);
   const { data, error } = await supabase.auth.getUser(token);
   if (error || !data?.user) return json({ error: 'Not signed in' }, 401);
+  const [owner] = await sql`select 1 from app_owner where user_id = ${data.user.id}`;
+  if (!owner) return json({ error: 'This account is not the owner of this Sift' }, 403);
 
   try {
     const body = await req.json();

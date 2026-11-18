@@ -1,6 +1,7 @@
-# Test, then deploy the database + Edge Function to Supabase and the app to GitHub Pages.
-# Setup (once): see README → "Deploy". Needs repo variables SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_PROJECT_REF
-# and secrets SUPABASE_ACCESS_TOKEN, SUPABASE_DB_PASSWORD.
+# Test, then publish the app to GitHub Pages.
+# Optional: also deploy database migrations + the Edge Function with the Supabase CLI — set repo variable
+# SUPABASE_PROJECT_REF and secrets SUPABASE_ACCESS_TOKEN, SUPABASE_DB_PASSWORD. (Without them, apply changes
+# from the Supabase dashboard / MCP instead; the app reads its Supabase config from public/config.js.)
 name: Deploy
 
 on:
@@ -70,13 +71,14 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - name: Write config.js
+      - name: Override config.js from repo variables (optional)
+        if: ${{ vars.SUPABASE_URL != '' }}
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
         run: |
           node -e '
-            const cfg = { supabaseUrl: process.env.SUPABASE_URL || "", supabaseKey: process.env.SUPABASE_ANON_KEY || "" };
+            const cfg = { supabaseUrl: process.env.SUPABASE_URL, supabaseKey: process.env.SUPABASE_ANON_KEY };
             require("fs").writeFileSync("public/config.js", "window.SIFT_CONFIG = " + JSON.stringify(cfg) + ";\n");
           '
       - uses: actions/configure-pages@v5

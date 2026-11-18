@@ -21,11 +21,13 @@ const bigintAsNumber = { to: 20, from: [20], serialize: (x) => String(x), parse:
 const sql = postgres(process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/sift_dev', { max: 5, onnotice: () => {}, types: { bigint: bigintAsNumber } });
 
 if (process.env.RESET_DB) {
-  await sql.unsafe('drop schema if exists public cascade; create schema public;');
+  await sql.unsafe('drop schema if exists private cascade; drop schema if exists public cascade; create schema public;');
   await sql.unsafe(readFileSync(join(root, 'test/supabase-stub.sql'), 'utf8'));
   for (const f of readdirSync(join(root, 'supabase/migrations')).sort()) await sql.unsafe(readFileSync(join(root, 'supabase/migrations', f), 'utf8'));
   console.log('Database reset and migrations applied.');
 }
+// The dev "user" owns this local database.
+await sql`insert into app_owner (user_id) values ('00000000-0000-0000-0000-000000000001') on conflict do nothing`;
 
 const MIME = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
   '.svg': 'image/svg+xml', '.png': 'image/png', '.webmanifest': 'application/manifest+json', '.json': 'application/json' };
@@ -35,7 +37,12 @@ const send = (res, status, body, headers = {}) => {
   res.writeHead(status, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*', ...headers });
   res.end(body === undefined ? '' : JSON.stringify(body));
 };
-const asUser = (fn) => sql.begin(async (tx) => { await tx`set local role authenticated`; return fn(tx); });
+const DEV_USER = '00000000-0000-0000-0000-000000000001';
+const asUser = (fn) => sql.begin(async (tx) => {
+  await tx`set local role authenticated`;
+  await tx`select set_config('request.jwt.claim.sub', ${DEV_USER}, true)`;
+  return fn(tx);
+});
 
 /** Translate PostgREST-style filters (?col=eq.1&id=in.(1,2)&seen_at=is.null) into SQL. */
 function where(params, values) {
@@ -109,7 +116,7 @@ async function rest(req, res, path, params, body) {
 }
 
 const fakeSession = () => {
-  const user = { id: '00000000-0000-0000-0000-000000000001', aud: 'authenticated', role: 'authenticated', email: 'dev@localhost' };
+  const user = { id: DEV_USER, aud: 'authenticated', role: 'authenticated', email: 'dev@localhost' };
   const now = Math.floor(Date.now() / 1000);
   const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url');
   const jwt = `${b64({ alg: 'HS256', typ: 'JWT' })}.${b64({ sub: user.id, role: 'authenticated', exp: now + 3600, email: user.email })}.dev`;

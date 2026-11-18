@@ -23,65 +23,46 @@ Topics, sources, card types and decks are all configured in the app under **Sett
 ## How it's hosted (all free tiers)
 
 ```
-GitHub Pages ──── the app (static files in public/)
+GitHub Pages ──── the app (static files in public/; Supabase URL + publishable key in public/config.js)
      │  supabase-js, signed in as you
      ▼
-Supabase ──────── Postgres (all data, row level security: only signed-in users)
-     │            Edge Function `sift-fetch` (Preview / Fetch now buttons)
-     ▲
-GitHub Actions ── Deploy: test → apply migrations → deploy function → publish Pages   (on push to main)
-                  Fetch feeds: every hour, fetch all sources into the database
+Supabase ──────── Postgres: all data; row level security lets only the owner account in (app_owner table)
+                  Edge Function `sift-fetch`: Preview / Fetch now buttons, and the hourly fetch
+                  pg_cron: calls sift-fetch every hour (secret generated in-database, kept in Vault)
+GitHub Actions ── Deploy: run tests → publish Pages (on push to main)
 ```
 
-The feed ranking, card generation and spaced repetition run in the browser (`public/lib/`). Fetching runs in GitHub Actions and the Edge Function, which share the same code (`supabase/functions/_shared/`).
+The feed ranking, card generation and spaced repetition run in the browser (`public/lib/`). Fetching runs in the Edge Function (`supabase/functions/`), and `npm run fetch` runs the same code locally.
 
 ## Deploy
 
-**1. Supabase** ([supabase.com](https://supabase.com), free plan)
+**Supabase** (free plan)
 
-1. Create a project and note the **database password**.
-2. **Authentication → Users → Add user**: create your own account (email and password, tick *auto confirm*).
-3. **Authentication → Sign In / Providers**: turn **off** "Allow new users to sign up". Sift is single-user: anyone signed in can see everything.
-4. Collect:
-   - **Project URL** and **anon / publishable key**: Project Settings → API (Keys).
-   - **Project ref**: the `xxxx` in `https://xxxx.supabase.co`.
-   - **Session pooler connection string**: the **Connect** button → *Session pooler*. Fill in your password. GitHub Actions needs the pooler because the direct connection is IPv6-only.
-   - **Access token**: [Account → Access Tokens](https://supabase.com/dashboard/account/tokens).
+1. Apply the migrations in `supabase/migrations/` in order, with the Supabase CLI (`supabase link` then `supabase db push`), the SQL editor, or an MCP client.
+2. Deploy the Edge Function: `supabase functions deploy sift-fetch` (it uses `verify_jwt = false` from `config.toml`; the function checks the caller itself).
+3. Schedule the hourly fetch: `select private.schedule_fetch('https://<project-ref>.supabase.co');`
+4. **Authentication → Users → Add user**: create your account (tick *auto confirm*). Then make it the owner:
+   `insert into app_owner (user_id) select id from auth.users where email = 'you@example.com';`
+   No other account can read or change anything, even if sign-ups are on. Turning off "Allow new users to sign up" (Authentication → Sign In / Providers) is still tidy.
+5. Put the project URL and publishable key in `public/config.js`.
 
-**2. GitHub repo settings**
+**GitHub**: **Settings → Pages → Build and deployment → Source: GitHub Actions**. Every push to `main` then tests and publishes the app at `https://<user>.github.io/<repo>/`.
 
-- **Settings → Pages → Build and deployment → Source: GitHub Actions.** On the free GitHub plan, Pages needs the repo to be public. Nothing secret is in the repo; the Supabase URL and anon key are designed to be public.
-- **Settings → Secrets and variables → Actions**:
+Optional: to have CI also push migrations and the function, set the repo variable `SUPABASE_PROJECT_REF` and the secrets `SUPABASE_ACCESS_TOKEN` and `SUPABASE_DB_PASSWORD`.
 
-| Type | Name | Value |
-|---|---|---|
-| Variable | `SUPABASE_URL` | `https://xxxx.supabase.co` |
-| Variable | `SUPABASE_ANON_KEY` | anon / publishable key |
-| Variable | `SUPABASE_PROJECT_REF` | `xxxx` |
-| Secret | `SUPABASE_ACCESS_TOKEN` | personal access token |
-| Secret | `SUPABASE_DB_PASSWORD` | database password |
-| Secret | `DATABASE_URL` | session pooler connection string |
-
-**3. Deploy**
-
-Push to `main`, or run the **Deploy** workflow from the Actions tab. It runs the tests, creates the tables and starter content, deploys the Edge Function and publishes the app. Then run **Fetch feeds** once by hand rather than waiting for the hourly run.
-
-**4. On your phone**
-
-Open `https://<your-github-username>.github.io/sift/`, sign in, and choose **Add to Home Screen** (Safari share menu, or the Chrome ⋮ menu). It opens full-screen like a native app.
+**On your phone**: open the Pages URL, sign in, then **Add to Home Screen** (Safari share menu, or the Chrome ⋮ menu).
 
 ### Free-tier notes
 
-- Supabase pauses free projects after about a week with no activity. The hourly fetch should keep it awake; if it pauses, restore it from the dashboard.
-- The hourly fetch uses about 1 Actions minute per run. That's free for public repos and roughly 720 of the 2,000 free minutes a month for private ones.
-- GitHub disables scheduled workflows in public repos after 60 days without a commit. Re-enable it from the Actions tab if that happens.
+- Supabase pauses free projects after about a week without activity. The hourly fetch should keep it awake; if it pauses, restore it from the dashboard.
+- **Reddit blocks requests from cloud servers** (HTTP 429/403), so subreddit sources fail when fetched from Supabase. RSS feeds and Hacker News work.
 
 ## Tips for good sources
 
 - **YouTube channel** → RSS source with `https://www.youtube.com/feeds/videos.xml?channel_id=CHANNEL_ID`
 - **Substack** → `https://NAME.substack.com/feed`
 - **arXiv category** → `https://rss.arxiv.org/rss/cs.CL` (add include keywords; it's high volume)
-- **Subreddits** → raise *Minimum upvotes* until the preview looks right. If Reddit blocks the JSON API from GitHub's or Supabase's servers, Sift falls back to RSS, which has no scores.
+- **Subreddits** → currently blocked from cloud servers (see Free-tier notes).
 - **Hacker News** → keep the keyword list for the topic; the points threshold does the quality filtering.
 
 To import flashcards, go to **Settings → Decks** and paste lines of `front, back, note` (comma or tab separated; pasting from a spreadsheet works). Then add a *Flashcards* card type that points at the deck.
@@ -102,7 +83,7 @@ RESET_DB=1 DATABASE_URL=postgres://localhost/sift_dev npm run dev   # http://loc
 |---|---|
 | `npm test` | Unit and database tests (needs Postgres; `TEST_DATABASE_URL`, default `postgres://postgres:postgres@localhost:5432/sift_test`). |
 | `node test/e2e.cjs` | Browser end-to-end test against `npm run dev` (needs Playwright). |
-| `npm run fetch` | Fetch all sources once (`DATABASE_URL`). |
+| `npm run fetch` | Fetch all sources once from your machine (`DATABASE_URL` = a Postgres connection string). |
 | `npm run build:seed` | Regenerate the starter-content migration from `seed/`. |
 
 ```
@@ -112,11 +93,11 @@ public/                       the app (vanilla JS, no build step)
   lib/generators.js           practice card kinds + spaced repetition
   lib/theory.js               music theory (spelling, chords, scales, keys, chord shapes)
   lib/data.js                 all Supabase reads/writes
-supabase/migrations/          schema, row level security, feed_state() function, starter content
-supabase/functions/sift-fetch Edge Function (preview / fetch now)
+supabase/migrations/          schema, owner-only row level security, feed_state(), starter content, hourly cron
+supabase/functions/sift-fetch Edge Function (preview / fetch now / hourly fetch)
 supabase/functions/_shared/   fetcher (RSS/Atom, HN, Reddit, filtering, de-dup) + database writes
-scripts/fetch.js              hourly fetch (GitHub Actions)
-.github/workflows/            deploy.yml, fetch.yml
+scripts/fetch.js              fetch once from the command line
+.github/workflows/deploy.yml  tests + GitHub Pages
 ```
 
 Ranking is `source weight × community score factor × recency decay × your affinity for that source × your affinity for that domain`. Articles are marked read once they have been at least half on screen for about a second, and they never show again.
