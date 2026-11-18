@@ -1,6 +1,6 @@
 // App-shell cache so Sift opens instantly (and offline). Data requests always go to the network.
-const CACHE = 'sift-v2';
-const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'config.js', 'manifest.webmanifest', 'icon.svg',
+const CACHE = 'sift-v3';
+const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'config.js', 'manifest.webmanifest', 'icon.svg', 'vendor/supabase-js-2.118.0.js',
   'lib/csv.js', 'lib/data.js', 'lib/feed.js', 'lib/generators.js', 'lib/source-kinds.js', 'lib/theory.js'];
 
 self.addEventListener('install', (e) => {
@@ -11,10 +11,8 @@ self.addEventListener('activate', (e) => {
 });
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  // Only same-origin app files (and the pinned supabase-js build) — never Supabase API calls.
-  const isApp = url.origin === location.origin;
-  const isLib = url.hostname === 'cdn.jsdelivr.net';
-  if (e.request.method !== 'GET' || !(isApp || isLib)) return;
+  // Only same-origin app files — never Supabase API calls.
+  if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   // Network first, falling back to cache: you always get the latest version when online.
   e.respondWith(
     fetch(e.request)

@@ -34,9 +34,6 @@ const assert = (cond, msg) => { if (!cond) throw new Error(`FAILED: ${msg}`); co
 
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ ...devices['iPhone 13'], deviceScaleFactor: OUT ? 2 : 1 });
-  // Serve the pinned supabase-js build from node_modules instead of the CDN.
-  await ctx.route('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@*/dist/umd/supabase.js', (r) =>
-    r.fulfill({ contentType: 'text/javascript', body: fs.readFileSync(require.resolve('@supabase/supabase-js/dist/umd/supabase.js')) }));
   const p = await ctx.newPage();
   const errors = [];
   p.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));

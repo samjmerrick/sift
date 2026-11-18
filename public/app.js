@@ -104,8 +104,21 @@ function showLogin() {
 
 function showSetup() {
   $('.topbar').hidden = true; $('.tabbar').hidden = true;
+  const why = !config.supabaseUrl
+    ? 'config.js is missing or empty, so the app doesn\'t know which Supabase project to use.'
+    : 'The Supabase library (vendor/supabase-js) didn\'t load. A content blocker or a stale cached copy can cause this.';
   view.replaceChildren(h('div', { class: 'login' }, h('h2', {}, 'Sift'),
-    h('p', { class: 'sub' }, 'Not connected to a backend yet. Create config.js with your Supabase URL and anon key (see config.example.js and the README).')));
+    h('p', { class: 'sub' }, `Can't start: ${why}`),
+    h('button', { class: 'btn', onclick: () => hardReload() }, 'Clear cache and reload')));
+}
+
+/** Drop service-worker caches and reload — fixes "stuck on an old version". */
+async function hardReload() {
+  try {
+    for (const r of (await navigator.serviceWorker?.getRegistrations?.()) || []) await r.unregister();
+    for (const k of (await caches?.keys?.()) || []) await caches.delete(k);
+  } catch { /* best effort */ }
+  location.reload();
 }
 
 // ---------- topic chips ----------
