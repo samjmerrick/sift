@@ -55,9 +55,17 @@ function toast(msg) {
 }
 
 const config = window.SIFT_CONFIG || {};
-const data = config.supabaseUrl && window.supabase
-  ? createData(window.supabase.createClient(config.supabaseUrl, config.supabaseKey, { auth: { persistSession: true, autoRefreshToken: true } }))
-  : null;
+let startupError = null;
+const data = (() => {
+  if (!config.supabaseUrl || !config.supabaseKey) { startupError = 'config.js is missing the Supabase URL or key.'; return null; }
+  if (!window.supabase) { startupError = "The Supabase library (vendor/supabase-js) didn't load. A content blocker or a stale cached copy can cause this."; return null; }
+  try {
+    return createData(window.supabase.createClient(config.supabaseUrl, config.supabaseKey, { auth: { persistSession: true, autoRefreshToken: true } }));
+  } catch (e) {
+    startupError = `Couldn't set up Supabase: ${e.message}`;
+    return null;
+  }
+})();
 const fail = (e) => toast(e.message || String(e));
 
 // ---------- icons ----------
@@ -104,9 +112,7 @@ function showLogin() {
 
 function showSetup() {
   $('.topbar').hidden = true; $('.tabbar').hidden = true;
-  const why = !config.supabaseUrl
-    ? 'config.js is missing or empty, so the app doesn\'t know which Supabase project to use.'
-    : 'The Supabase library (vendor/supabase-js) didn\'t load. A content blocker or a stale cached copy can cause this.';
+  const why = startupError || 'Unknown startup problem.';
   view.replaceChildren(h('div', { class: 'login' }, h('h2', {}, 'Sift'),
     h('p', { class: 'sub' }, `Can't start: ${why}`),
     h('button', { class: 'btn', onclick: () => hardReload() }, 'Clear cache and reload')));
