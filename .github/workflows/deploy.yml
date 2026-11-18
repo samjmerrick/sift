@@ -81,6 +81,8 @@ jobs:
             const cfg = { supabaseUrl: process.env.SUPABASE_URL, supabaseKey: process.env.SUPABASE_ANON_KEY };
             require("fs").writeFileSync("public/config.js", "window.SIFT_CONFIG = " + JSON.stringify(cfg) + ";\n");
           '
+      - name: Stamp build id
+        run: sed -i "s/window.SIFT_BUILD = 'dev';/window.SIFT_BUILD = '${GITHUB_SHA::7}';/" public/index.html && grep -c "SIFT_BUILD = '${GITHUB_SHA::7}'" public/index.html
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -50,6 +50,44 @@
   </div>
   <div id="toast" class="toast" role="status" aria-live="polite"></div>
 
+  <script>
+    // Startup diagnostics: if the app hasn't drawn anything after a few seconds, show what went wrong.
+    window.SIFT_BUILD = 'dev';
+    window.SIFT_ERRORS = [];
+    window.addEventListener('error', function (e) {
+      SIFT_ERRORS.push((e.message || 'error') + (e.filename ? ' @ ' + e.filename.split('/').pop() + ':' + e.lineno : ''));
+    }, true);
+    window.addEventListener('error', function (e) {
+      if (e.target && e.target.src) SIFT_ERRORS.push('failed to load ' + e.target.src);
+    }, true);
+    window.addEventListener('unhandledrejection', function (e) { SIFT_ERRORS.push('unhandled: ' + (e.reason && e.reason.message || e.reason)); });
+    setTimeout(function () {
+      var view = document.getElementById('view');
+      if (!view || view.children.length) return;
+      var box = document.createElement('div');
+      box.className = 'login';
+      box.innerHTML = '<h2>Sift</h2><p class="sub">The app didn\'t start. Please send this to whoever set it up:</p>';
+      var pre = document.createElement('pre');
+      pre.style.cssText = 'text-align:left;white-space:pre-wrap;font-size:12px;background:var(--surface-2);padding:10px;border-radius:8px';
+      pre.textContent = 'build: ' + SIFT_BUILD + '\nurl: ' + location.href + '\nbrowser: ' + navigator.userAgent +
+        '\nconfig: ' + (window.SIFT_CONFIG ? (SIFT_CONFIG.supabaseUrl ? 'url ok' : 'NO URL') + ', ' + (SIFT_CONFIG.supabaseKey ? 'key ok' : 'NO KEY') : 'missing') +
+        '\nsupabase lib: ' + (window.supabase ? 'loaded' : 'NOT loaded') +
+        '\nerrors:\n' + (SIFT_ERRORS.join('\n') || '(none)');
+      var btn = document.createElement('button');
+      btn.className = 'btn';
+      btn.textContent = 'Clear cache and reload';
+      btn.onclick = async function () {
+        try {
+          var regs = navigator.serviceWorker ? await navigator.serviceWorker.getRegistrations() : [];
+          for (var r of regs) await r.unregister();
+          if (window.caches) for (var k of await caches.keys()) await caches.delete(k);
+        } catch (_) {}
+        location.replace(location.pathname + '?r=' + Date.now());
+      };
+      box.append(pre, btn);
+      view.append(box);
+    }, 6000);
+  </script>
   <script src="config.js"></script>
   <script src="vendor/supabase-js-2.118.0.js"></script>
   <script type="module" src="app.js"></script>

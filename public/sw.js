@@ -1,5 +1,5 @@
 // App-shell cache so Sift opens instantly (and offline). Data requests always go to the network.
-const CACHE = 'sift-v3';
+const CACHE = 'sift-v4';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'config.js', 'manifest.webmanifest', 'icon.svg', 'vendor/supabase-js-2.118.0.js',
   'lib/csv.js', 'lib/data.js', 'lib/feed.js', 'lib/generators.js', 'lib/source-kinds.js', 'lib/theory.js'];
 
@@ -15,7 +15,8 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET' || url.origin !== location.origin) return;
   // Network first, falling back to cache: you always get the latest version when online.
   e.respondWith(
-    fetch(e.request)
+    // cache: 'no-cache' revalidates with the server every time, so a new deploy shows up immediately.
+    fetch(e.request, { cache: 'no-cache' })
       .then((res) => {
         if (res.ok) { const copy = res.clone(); caches.open(CACHE).then((c) => c.put(e.request, copy)); }
         return res;

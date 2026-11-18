@@ -817,7 +817,8 @@ $('#refresh').onclick = () => { flushSeen(); if (route().name !== 'feed') locati
 
 (async function init() {
   if (!data) return showSetup();
-  if (!(await data.session().catch(() => null))) return showLogin();
+  const timeout = new Promise((resolve) => setTimeout(() => resolve(null), 5000));
+  if (!(await Promise.race([data.session().catch(() => null), timeout]))) return showLogin();
   try { await loadMeta(); } catch (e) { view.replaceChildren(h('p', { class: 'status' }, `Couldn't connect: ${e.message}`)); return; }
   onRoute();
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
