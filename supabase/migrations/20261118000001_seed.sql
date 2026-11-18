@@ -10,14 +10,24 @@ insert into sources (topic_id, kind, name, config, include, exclude, weight) val
   ((select id from topics where name = 'AI'), 'hn', 'Hacker News: AI', '{"min_points":150,"days":3}'::jsonb, 'AI, LLM, LLMs, GPT, Claude, Gemini, Llama, model, models, neural, transformer, agents, agent, inference, OpenAI, Anthropic, DeepMind, diffusion, embedding, embeddings, fine-tuning, RAG', '', 1),
   ((select id from topics where name = 'AI'), 'rss', 'Simon Willison', '{"url":"https://simonwillison.net/atom/everything/"}'::jsonb, '', '', 1.2),
   ((select id from topics where name = 'AI'), 'rss', 'Hugging Face blog', '{"url":"https://huggingface.co/blog/feed.xml"}'::jsonb, '', '', 1),
-  ((select id from topics where name = 'AI'), 'reddit', 'r/LocalLLaMA', '{"subreddit":"LocalLLaMA","period":"week","limit":15,"min_score":300}'::jsonb, '', '', 1),
-  ((select id from topics where name = 'AI'), 'reddit', 'r/MachineLearning', '{"subreddit":"MachineLearning","period":"week","limit":10,"min_score":100}'::jsonb, '', '', 1),
-  ((select id from topics where name = 'Russian'), 'reddit', 'r/russian', '{"subreddit":"russian","period":"week","limit":15,"min_score":50}'::jsonb, '', '', 1),
-  ((select id from topics where name = 'Russian'), 'reddit', 'r/russianlearning', '{"subreddit":"russianlearning","period":"week","limit":10,"min_score":10}'::jsonb, '', '', 1),
-  ((select id from topics where name = 'Guitar'), 'reddit', 'r/guitarlessons', '{"subreddit":"guitarlessons","period":"week","limit":15,"min_score":50}'::jsonb, '', '', 1.2),
-  ((select id from topics where name = 'Guitar'), 'reddit', 'r/Guitar', '{"subreddit":"Guitar","period":"week","limit":10,"min_score":500}'::jsonb, '', 'NGD, new guitar day', 0.8),
-  ((select id from topics where name = 'Piano'), 'reddit', 'r/piano', '{"subreddit":"piano","period":"week","limit":15,"min_score":100}'::jsonb, '', '', 1),
-  ((select id from topics where name = 'Piano'), 'reddit', 'r/musictheory', '{"subreddit":"musictheory","period":"week","limit":10,"min_score":100}'::jsonb, '', '', 1);
+  ((select id from topics where name = 'AI'), 'rss', 'Lobsters: AI', '{"url":"https://lobste.rs/t/ai.rss","max_age_days":7}'::jsonb, '', '', 1),
+  ((select id from topics where name = 'AI'), 'rss', 'Ahead of AI (Sebastian Raschka)', '{"url":"https://magazine.sebastianraschka.com/feed","max_age_days":30}'::jsonb, '', '', 1.2),
+  ((select id from topics where name = 'AI'), 'rss', 'Interconnects (Nathan Lambert)', '{"url":"https://www.interconnects.ai/feed","max_age_days":30}'::jsonb, '', '', 1),
+  ((select id from topics where name = 'AI'), 'rss', 'Latent Space', '{"url":"https://www.latent.space/feed","max_age_days":30}'::jsonb, '', '', 0.9),
+  ((select id from topics where name = 'Russian'), 'rss', 'Russian With Max', '{"url":"https://www.youtube.com/feeds/videos.xml?channel_id=UCklUqFEcJqFnWKEBozw5p4g","max_age_days":30}'::jsonb, '', '', 1.2),
+  ((select id from topics where name = 'Russian'), 'rss', 'Real Russian Club', '{"url":"https://www.youtube.com/feeds/videos.xml?channel_id=UCyJznKYS9kkP7RWWq3YAbFw","max_age_days":30}'::jsonb, '', '', 1),
+  ((select id from topics where name = 'Guitar'), 'rss', 'JustinGuitar', '{"url":"https://www.youtube.com/feeds/videos.xml?channel_id=UCBNkm8o5LiEVLxO8w0p2sfQ","max_age_days":30}'::jsonb, '', '', 1.2),
+  ((select id from topics where name = 'Guitar'), 'rss', 'Paul Davids', '{"url":"https://www.youtube.com/feeds/videos.xml?channel_id=UC_Oa7Ph3v94om5OyxY1nPKg","max_age_days":30}'::jsonb, '', '', 1),
+  ((select id from topics where name = 'Guitar'), 'rss', 'Marty Music', '{"url":"https://www.youtube.com/feeds/videos.xml?channel_id=UCmnlTWVJysjWPFiZhQ5uudg","max_age_days":14}'::jsonb, '', '', 0.8),
+  ((select id from topics where name = 'Guitar'), 'rss', 'Guitar World lessons', '{"url":"https://www.guitarworld.com/feeds/all","max_age_days":14}'::jsonb, 'lesson, lessons, technique, how to, practice, practise, exercise, exercises, theory, chord, chords, scale, scales, lick, licks, riff, riffs, tips, beginner, beginners, learn, fretboard, picking, fingerpicking, improvise, improvisation', 'deal, deals, sale, price, giveaway', 1),
+  ((select id from topics where name = 'Guitar'), 'rss', 'Guitar Player lessons', '{"url":"https://www.guitarplayer.com/feeds/all","max_age_days":14}'::jsonb, 'lesson, lessons, technique, how to, practice, practise, exercise, exercises, theory, chord, chords, scale, scales, lick, licks, riff, riffs, tips, beginner, beginners, learn, fretboard, picking, fingerpicking, improvise, improvisation', 'deal, deals, sale, price, giveaway', 1),
+  ((select id from topics where name = 'Guitar'), 'rss', 'Premier Guitar lessons', '{"url":"https://www.premierguitar.com/feeds/feed.rss","max_age_days":14}'::jsonb, 'lesson, lessons, technique, how to, practice, practise, exercise, exercises, theory, chord, chords, scale, scales, lick, licks, riff, riffs, tips, beginner, beginners, learn, fretboard, picking, fingerpicking, improvise, improvisation', 'deal, deals, sale, price, giveaway', 0.9),
+  ((select id from topics where name = 'Piano'), 'rss', 'Nahre Sol', '{"url":"https://www.youtube.com/feeds/videos.xml?channel_id=UC8R8FRt1KcPiR-rtAflXmeg","max_age_days":60}'::jsonb, '', '', 1.2),
+  ((select id from topics where name = 'Piano'), 'rss', 'Josh Wright', '{"url":"https://www.youtube.com/feeds/videos.xml?channel_id=UCp4DtLatjb5dBNHHYcvVXCw","max_age_days":30}'::jsonb, '', '', 1),
+  ((select id from topics where name = 'Piano'), 'rss', 'Adam Neely (music theory)', '{"url":"https://www.youtube.com/feeds/videos.xml?channel_id=UCnkp4xDOwqqJD7sSM3xdUiQ","max_age_days":60}'::jsonb, '', '', 0.9),
+  ((select id from topics where name = 'Piano'), 'rss', 'PianoTV', '{"url":"https://www.pianotv.net/feed/","max_age_days":60}'::jsonb, '', '', 1.2),
+  ((select id from topics where name = 'Piano'), 'rss', 'Musicnotes blog', '{"url":"https://www.musicnotes.com/blog/feed/","max_age_days":30}'::jsonb, '', '', 0.9),
+  ((select id from topics where name = 'Piano'), 'rss', 'Ethan Hein (music theory)', '{"url":"https://www.ethanhein.com/wp/feed/","max_age_days":60}'::jsonb, '', '', 1);
 
 insert into decks (name) values ('Russian core vocabulary');
 

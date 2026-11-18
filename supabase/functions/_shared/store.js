@@ -41,7 +41,7 @@ export async function fetchSource(sql, src) {
 export async function enrichSummaries(sql, limit = 25) {
   const rows = await sql`
     select id, url from items
-    where summary = '' and seen_at is null and url not like '%news.ycombinator.com%' and url not like '%reddit.com%'
+    where summary = '' and seen_at is null and url not like '%news.ycombinator.com%'
     order by fetched_at desc limit ${limit}`;
   let i = 0;
   const worker = async () => {

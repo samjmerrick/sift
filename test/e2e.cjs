@@ -23,8 +23,8 @@ const assert = (cond, msg) => { if (!cond) throw new Error(`FAILED: ${msg}`); co
   const samples = [
     ['Simon Willison', 'Notes on prompt caching for long agent sessions', 'A short description from the feed itself appears here, clamped to a few lines so cards stay bite-sized.', null, 3],
     ['Hacker News: AI', 'A visual guide to how transformers pay attention', "Summary pulled from the page's description.", 642, 9],
-    ['r/russian', 'Verbs of motion finally clicked for me', 'Self-post text from Reddit is used as the summary.', 412, 20],
-    ['r/piano', 'How I practise sight-reading 10 minutes a day', '', 180, 15],
+    ['Russian With Max', 'Verbs of motion finally clicked for me', 'The video description is used as the summary.', null, 20],
+    ['Nahre Sol', 'How I practise sight-reading 10 minutes a day', '', null, 15],
   ];
   for (const [i, [source, title, summary, score, hrs]] of samples.entries()) {
     await sql`insert into items (source_id, topic_id, url, title, title_key, summary, domain, community_score, published_at)

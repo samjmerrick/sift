@@ -723,7 +723,6 @@ function editSource(s) {
     preview));
 }
 function defaultName(kind, cfg) {
-  if (kind === 'reddit') return `r/${cfg.subreddit || '?'}`;
   if (kind === 'hn') return 'Hacker News';
   try { return new URL(cfg.url).hostname.replace(/^www\./, ''); } catch { return 'Feed'; }
 }

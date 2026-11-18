@@ -8,7 +8,7 @@ after(() => sql.end());
 test('seed data is present', async () => {
   const [r] = await sql`select (select count(*) from topics)::int t, (select count(*) from sources)::int s,
     (select count(*) from cards)::int c, (select count(*) from generators)::int g`;
-  assert.deepEqual(r, { t: 4, s: 11, c: 90, g: 9 });
+  assert.deepEqual(r, { t: 4, s: 21, c: 90, g: 9 });
   const [fc] = await sql`select config from generators where kind = 'flashcards'`;
   const [deck] = await sql`select id from decks`;
   assert.equal(Number(fc.config.deck_id), Number(deck.id));
@@ -45,6 +45,6 @@ test('owner can use tables, views and feed_state', async () => {
     assert.equal(state.topics.length, 4);
     assert.ok(state.decks[deck.id].new.length === 1);
     const sources = await tx`select * from source_stats`;
-    assert.equal(sources.length, 11);
+    assert.equal(sources.length, 21);
   });
 });

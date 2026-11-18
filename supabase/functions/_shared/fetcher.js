@@ -140,8 +140,13 @@ async function fetchRss(cfg) {
   const cutoff = Date.now() - (Number(cfg.max_age_days) || 14) * DAY;
   return items
     .filter((i) => !i.published || i.published >= cutoff)
+    .filter((i) => !/youtube\.com\/shorts\//.test(i.url || '')) // YouTube Shorts aren't worth a card
     .slice(0, 40)
-    .map((i) => ({ title: htmlToText(i.title), url: i.url, summary: truncate(htmlToText(i.html)), image: i.image, published: i.published || Date.now(), comments_url: i.comments_url }));
+    .map((i) => {
+      const summary = truncate(htmlToText(i.html));
+      // Link aggregators (Lobsters etc.) put only a "Comments" link in the description: leave it empty so the page's own description is used.
+      return { title: htmlToText(i.title), url: i.url, summary: /^comments$/i.test(summary) ? '' : summary, image: i.image, published: i.published || Date.now(), comments_url: i.comments_url };
+    });
 }
 
 async function fetchHn(cfg) {
@@ -159,84 +164,7 @@ async function fetchHn(cfg) {
   }));
 }
 
-// ---------- Reddit ----------
-// Reddit blocks anonymous requests from cloud servers, so with credentials we use the official API
-// (app-only OAuth for a "script" app from reddit.com/prefs/apps). Set REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET.
-const env = (k) => globalThis.Deno?.env.get(k) ?? globalThis.process?.env?.[k];
-const REDDIT_UA = 'web:sift-personal-feed:0.1 (personal feed reader)';
-let redditToken = null; // { token, expires }
-
-async function redditAccessToken() {
-  const id = env('REDDIT_CLIENT_ID');
-  const secret = env('REDDIT_CLIENT_SECRET');
-  if (!id || !secret) return null;
-  if (redditToken && redditToken.expires > Date.now() + 60000) return redditToken.token;
-  const res = await fetch('https://www.reddit.com/api/v1/access_token', {
-    method: 'POST',
-    headers: {
-      Authorization: `Basic ${btoa(`${id}:${secret}`)}`,
-      'Content-Type': 'application/x-www-form-urlencoded',
-      'User-Agent': REDDIT_UA,
-    },
-    body: 'grant_type=client_credentials',
-  });
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok || !data.access_token) throw new Error(`Reddit sign-in failed (HTTP ${res.status}${data.error ? `: ${data.error}` : ''}). Check REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET.`);
-  redditToken = { token: data.access_token, expires: Date.now() + (data.expires_in || 3600) * 1000 };
-  return redditToken.token;
-}
-
-function redditPosts(listing, minScore) {
-  return listing.data.children.map((c) => c.data)
-    .filter((p) => !p.stickied && !p.over_18 && p.score >= minScore)
-    .map((p) => {
-      const permalink = `https://www.reddit.com${p.permalink}`;
-      const external = !p.is_self && p.url && !/reddit\.com|redd\.it/.test(p.url);
-      const img = p.preview?.images?.[0]?.source?.url;
-      return {
-        title: p.title, url: external ? p.url : permalink,
-        summary: truncate(p.selftext || ''), image: img || (/^https?:/.test(p.thumbnail || '') ? p.thumbnail : null),
-        published: p.created_utc * 1000, community_score: p.score, comment_count: p.num_comments, comments_url: permalink,
-      };
-    });
-}
-
-async function fetchReddit(cfg) {
-  const sub = String(cfg.subreddit || '').replace(/^\/?r\//, '').trim();
-  if (!sub) throw new Error('Subreddit is required');
-  const period = ['day', 'week', 'month', 'year'].includes(cfg.period) ? cfg.period : 'week';
-  const limit = Math.min(Number(cfg.limit) || 15, 50);
-  const minScore = Number(cfg.min_score) || 0;
-
-  const token = await redditAccessToken();
-  if (token) {
-    const url = `https://oauth.reddit.com/r/${encodeURIComponent(sub)}/top?t=${period}&limit=${limit}&raw_json=1`;
-    const res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, 'User-Agent': REDDIT_UA } });
-    if (res.status === 401) redditToken = null; // expired/revoked: next call signs in again
-    if (!res.ok) throw new Error(`HTTP ${res.status} from Reddit API for r/${sub}`);
-    return redditPosts(await res.json(), minScore);
-  }
-
-  try {
-    return redditPosts(JSON.parse(await get(`https://www.reddit.com/r/${sub}/top.json?t=${period}&limit=${limit}&raw_json=1`)), minScore);
-  } catch (err) {
-    // Reddit often blocks the JSON API for servers; the RSS feed is the fallback (no scores, so no threshold).
-    let items;
-    try {
-      items = parseFeed(await get(`https://www.reddit.com/r/${sub}/top/.rss?t=${period}&limit=${limit}`));
-    } catch (rssErr) {
-      throw new Error(`${rssErr.message}. Reddit blocks servers without API access: add REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET (see README).`);
-    }
-    return items.map((i) => {
-      const linkMatch = /<a href="([^"]+)">\[link\]<\/a>/.exec(i.html || '');
-      const external = linkMatch && !/reddit\.com|redd\.it/.test(linkMatch[1]) ? decodeEntities(linkMatch[1]) : null;
-      const body = htmlToText((i.html || '').replace(/<a href="[^"]*">\[(link|comments)\]<\/a>/g, '')).replace(/submitted by\s+\/u\/\S+/i, '').trim();
-      return { title: i.title, url: external || i.url, summary: truncate(body), image: i.image, published: i.published || Date.now(), comments_url: i.url };
-    });
-  }
-}
-
-const FETCHERS = { rss: fetchRss, hn: fetchHn, reddit: fetchReddit };
+const FETCHERS = { rss: fetchRss, hn: fetchHn };
 
 /** Fetch + filter a source definition without saving. */
 export async function previewSource(src) {

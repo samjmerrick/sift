@@ -16,14 +16,4 @@ export const SOURCE_KINDS = {
       { key: 'days', label: 'Look back (days)', type: 'number', default: 3 },
     ],
   },
-  reddit: {
-    label: 'Subreddit',
-    description: 'Top posts from a subreddit. Only posts above the score threshold are kept.',
-    fields: [
-      { key: 'subreddit', label: 'Subreddit (without r/)', type: 'text', default: '' },
-      { key: 'period', label: 'Top of the', type: 'select', options: ['day', 'week', 'month'], default: 'week' },
-      { key: 'limit', label: 'Max posts per fetch', type: 'number', default: 15 },
-      { key: 'min_score', label: 'Minimum upvotes', type: 'number', default: 50 },
-    ],
-  },
 };
