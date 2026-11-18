@@ -55,14 +55,18 @@ Optional: to have CI also push migrations and the function, set the repo variabl
 ### Free-tier notes
 
 - Supabase pauses free projects after about a week without activity. The hourly fetch should keep it awake; if it pauses, restore it from the dashboard.
-- **Reddit blocks requests from cloud servers** (HTTP 429/403), so subreddit sources fail when fetched from Supabase. RSS feeds and Hacker News work.
+- **Reddit blocks anonymous requests from cloud servers**, so subreddit sources need Reddit's official API (free for personal use):
+  1. At [reddit.com/prefs/apps](https://www.reddit.com/prefs/apps), choose **create another app…**, pick type **script**, and enter any name and a redirect URI such as `http://localhost`.
+  2. Copy the **client ID** (the string under the app name) and the **secret**.
+  3. Supabase dashboard → **Edge Functions → Secrets**: add `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET`. For `npm run fetch`, set them as environment variables instead.
+  4. Re-enable your Reddit sources in **Settings → Sources**.
 
 ## Tips for good sources
 
 - **YouTube channel** → RSS source with `https://www.youtube.com/feeds/videos.xml?channel_id=CHANNEL_ID`
 - **Substack** → `https://NAME.substack.com/feed`
 - **arXiv category** → `https://rss.arxiv.org/rss/cs.CL` (add include keywords; it's high volume)
-- **Subreddits** → currently blocked from cloud servers (see Free-tier notes).
+- **Subreddits** → needs Reddit API credentials (see Free-tier notes). Then raise *Minimum upvotes* until the preview looks right.
 - **Hacker News** → keep the keyword list for the topic; the points threshold does the quality filtering.
 
 To import flashcards, go to **Settings → Decks** and paste lines of `front, back, note` (comma or tab separated; pasting from a spreadsheet works). Then add a *Flashcards* card type that points at the deck.
