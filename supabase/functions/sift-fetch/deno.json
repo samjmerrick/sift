@@ -1,0 +1,7 @@
+{
+  "imports": {
+    "postgres": "npm:postgres@3.4.9",
+    "fast-xml-parser": "npm:fast-xml-parser@5.11.2",
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@2.118.0"
+  }
+}

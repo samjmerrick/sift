@@ -1,0 +1,87 @@
+# Test, then deploy the database + Edge Function to Supabase and the app to GitHub Pages.
+# Setup (once): see README → "Deploy". Needs repo variables SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_PROJECT_REF
+# and secrets SUPABASE_ACCESS_TOKEN, SUPABASE_DB_PASSWORD.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: sift_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm test
+        env:
+          TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/sift_test
+
+  supabase:
+    needs: test
+    if: ${{ vars.SUPABASE_PROJECT_REF != '' }}
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+      PROJECT_REF: ${{ vars.SUPABASE_PROJECT_REF }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.122.1
+      - name: Link project
+        run: supabase link --project-ref "$PROJECT_REF"
+      - name: Apply database migrations
+        run: supabase db push
+      - name: Deploy Edge Function
+        run: supabase functions deploy sift-fetch --project-ref "$PROJECT_REF"
+
+  pages:
+    needs: [test, supabase]
+    # Deploy even when the Supabase job is skipped (not configured), but not when it failed.
+    if: ${{ always() && needs.test.result == 'success' && needs.supabase.result != 'failure' }}
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Write config.js
+        env:
+          SUPABASE_URL: ${{ vars.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
+        run: |
+          node -e '
+            const cfg = { supabaseUrl: process.env.SUPABASE_URL || "", supabaseKey: process.env.SUPABASE_ANON_KEY || "" };
+            require("fs").writeFileSync("public/config.js", "window.SIFT_CONFIG = " + JSON.stringify(cfg) + ";\n");
+          '
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: public
+      - id: deployment
+        uses: actions/deploy-pages@v4

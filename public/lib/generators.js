@@ -23,26 +23,20 @@ export const GENERATOR_KINDS = {
       { key: 'new_per_day', label: 'New cards per day', type: 'number', default: 10 },
       { key: 'reverse', label: 'Also quiz in reverse (back → front)', type: 'checkbox', default: false },
     ],
-    generate(cfg, { db, excludeKeys }) {
-      const deckId = Number(cfg.deck_id);
-      if (!deckId) return null;
-      const now = Date.now();
-      const notIn = (rows) => rows.find((r) => !excludeKeys.has(`card:${r.id}`));
-      let card = notIn(db.prepare('SELECT * FROM cards WHERE deck_id = ? AND due IS NOT NULL AND due <= ? ORDER BY due LIMIT 30').all(deckId, now));
+    generate(cfg, { decks, excludeKeys, now = Date.now() }) {
+      const deck = decks?.[cfg.deck_id];
+      if (!deck) return null;
+      const free = (c) => !excludeKeys.has(`card:${c.id}`);
+      let card = deck.due.find((c) => c.due <= now && free(c));
       let status = card ? (card.reps === 0 ? 'relearn' : 'review') : null;
-      if (!card) {
-        const startOfDay = new Date().setHours(0, 0, 0, 0);
-        const introduced = db.prepare('SELECT COUNT(*) n FROM cards WHERE deck_id = ? AND introduced_at >= ?').get(deckId, startOfDay).n;
-        if (introduced < Number(cfg.new_per_day ?? 10)) {
-          card = notIn(db.prepare('SELECT * FROM cards WHERE deck_id = ? AND due IS NULL ORDER BY position LIMIT 30').all(deckId));
-          status = 'new';
-        }
+      if (!card && deck.introduced_today < Number(cfg.new_per_day ?? 10)) {
+        card = deck.new.find(free);
+        status = 'new';
       }
       if (!card) return null;
-      const deck = db.prepare('SELECT name FROM decks WHERE id = ?').get(deckId);
       const reverse = cfg.reverse && status !== 'new' && Math.random() < 0.5;
       return {
-        key: `card:${card.id}`, kind: 'flashcard', card_id: card.id, status, deck: deck?.name,
+        key: `card:${card.id}`, kind: 'flashcard', card_id: card.id, deck_id: Number(cfg.deck_id), status, deck: deck.name,
         front: reverse ? card.back : card.front, back: reverse ? card.front : card.back, note: card.note,
       };
     },
@@ -216,12 +210,12 @@ export const GENERATOR_KINDS = {
   },
 };
 
-/** Spaced-repetition update (SM-2 flavoured). grade: again | good | easy */
-export function reviewCard(db, cardId, grade) {
-  const c = db.prepare('SELECT * FROM cards WHERE id = ?').get(cardId);
-  if (!c) return null;
-  const now = Date.now();
-  let { interval_days: iv, ease, reps, lapses } = c;
+/**
+ * Spaced-repetition update (SM-2 flavoured). grade: again | good | easy.
+ * Returns the fields to write back to the card row; times are epoch ms.
+ */
+export function scheduleReview(card, grade, now = Date.now()) {
+  let { interval_days: iv = 0, ease = 2.5, reps = 0, lapses = 0 } = card;
   let due;
   if (grade === 'again') {
     if (reps > 0) lapses++;
@@ -237,8 +231,16 @@ export function reviewCard(db, cardId, grade) {
     }
     due = now + Math.round(iv * DAY);
   }
-  db.prepare('UPDATE cards SET due = ?, interval_days = ?, ease = ?, reps = ?, lapses = ?, introduced_at = COALESCE(introduced_at, ?) WHERE id = ?')
-    .run(due, iv, ease, reps, lapses, now, cardId);
-  return { due, interval_days: iv };
+  return { due, interval_days: iv, ease, reps, lapses, introduced_at: card.introduced_at ?? now };
 }
 
+/** Apply a review to the in-memory deck queue so the feed reflects it without reloading. */
+export function applyReviewToDeck(deck, card, update) {
+  if (!deck) return;
+  const wasNew = card.due == null;
+  deck.new = deck.new.filter((c) => c.id !== card.id);
+  deck.due = deck.due.filter((c) => c.id !== card.id);
+  if (wasNew) deck.introduced_today++;
+  if (update.due - Date.now() < 12 * 3600e3) deck.due.push({ ...card, ...update });
+  deck.due.sort((a, b) => a.due - b.due);
+}

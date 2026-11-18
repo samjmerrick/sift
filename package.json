@@ -1,19 +1,23 @@
 {
   "name": "sift",
   "version": "0.1.0",
-  "description": "A personal, LLM-free, infinitely scrolling feed of useful things to read and practise.",
+  "description": "A personal, LLM-free, infinitely scrolling feed of useful things to read and practise. Supabase + GitHub Pages + Actions.",
   "type": "module",
-  "main": "src/server.js",
   "scripts": {
-    "start": "node --no-warnings=ExperimentalWarning src/server.js",
-    "fetch": "node --no-warnings=ExperimentalWarning src/fetch-once.js",
-    "test": "node --no-warnings=ExperimentalWarning --test test/*.test.js"
+    "dev": "node scripts/dev.js",
+    "fetch": "node scripts/fetch.js",
+    "build:seed": "node scripts/build-seed.js",
+    "test": "node --test --test-concurrency=1 test/*.test.js"
   },
   "engines": {
-    "node": ">=22.13"
+    "node": ">=20"
   },
   "license": "MIT",
   "dependencies": {
-    "fast-xml-parser": "^5.12.1"
+    "fast-xml-parser": "5.11.2",
+    "postgres": "3.4.9"
+  },
+  "devDependencies": {
+    "@supabase/supabase-js": "2.118.0"
   }
 }

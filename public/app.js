@@ -1,4 +1,8 @@
-// Sift client — vanilla JS, no build step.
+// Sift client — vanilla JS, no build step. Talks directly to Supabase.
+import { createData } from './lib/data.js';
+import { buildFeed, generateOne } from './lib/feed.js';
+import { GENERATOR_KINDS, scheduleReview, applyReviewToDeck } from './lib/generators.js';
+import { SOURCE_KINDS } from './lib/source-kinds.js';
 
 // ---------- utilities ----------
 const $ = (sel, el = document) => el.querySelector(sel);
@@ -50,15 +54,11 @@ function toast(msg) {
   toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
 }
 
-async function api(path, { method = 'GET', body } = {}) {
-  const res = await fetch(`/api${path}`, {
-    method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined, credentials: 'same-origin',
-  });
-  if (res.status === 401 && path !== '/login') { showLogin(); throw new Error('Login required'); }
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Request failed (${res.status})`);
-  return data;
-}
+const config = window.SIFT_CONFIG || {};
+const data = config.supabaseUrl && window.supabase
+  ? createData(window.supabase.createClient(config.supabaseUrl, config.supabaseKey, { auth: { persistSession: true, autoRefreshToken: true } }))
+  : null;
+const fail = (e) => toast(e.message || String(e));
 
 // ---------- icons ----------
 const ICON = {
@@ -75,21 +75,37 @@ const icon = (name) => h('span', { html: ICON[name], style: { display: 'contents
 // ---------- global state ----------
 let meta = { topics: [], source_kinds: {}, generator_kinds: {}, decks: [] };
 const topicById = (id) => meta.topics.find((t) => t.id === id) || { name: '', color: '#888' };
-async function loadMeta() { meta = await api('/meta'); renderChips(); }
+async function loadMeta() {
+  const [topics, decks] = await Promise.all([data.topics(), data.deckStats()]);
+  meta = {
+    topics, decks, source_kinds: SOURCE_KINDS,
+    generator_kinds: Object.fromEntries(Object.entries(GENERATOR_KINDS).map(([k, v]) => [k, { label: v.label, description: v.description, fields: v.fields }])),
+  };
+  renderChips();
+}
 
 // ---------- login ----------
 function showLogin() {
   $('.topbar').hidden = true; $('.tabbar').hidden = true;
-  const input = h('input', { type: 'password', placeholder: 'Password', autocomplete: 'current-password', required: true });
+  const email = h('input', { type: 'email', placeholder: 'Email', autocomplete: 'username', required: true });
+  const password = h('input', { type: 'password', placeholder: 'Password', autocomplete: 'current-password', required: true });
   const err = h('p', { class: 'sub' });
   view.replaceChildren(h('form', {
     class: 'login',
     onsubmit: async (e) => {
       e.preventDefault();
-      try { await api('/login', { method: 'POST', body: { password: input.value } }); location.reload(); } catch (ex) { err.textContent = ex.message; }
+      err.textContent = '';
+      try { await data.signIn(email.value.trim(), password.value); location.reload(); } catch (ex) { err.textContent = ex.message; }
     },
-  }, h('h2', {}, 'Sift'), h('label', { class: 'field' }, input), h('button', { class: 'btn primary', type: 'submit', style: { width: '100%' } }, 'Sign in'), err));
-  input.focus();
+  }, h('h2', {}, 'Sift'), h('label', { class: 'field' }, email), h('label', { class: 'field' }, password),
+  h('button', { class: 'btn primary', type: 'submit', style: { width: '100%' } }, 'Sign in'), err));
+  email.focus();
+}
+
+function showSetup() {
+  $('.topbar').hidden = true; $('.tabbar').hidden = true;
+  view.replaceChildren(h('div', { class: 'login' }, h('h2', {}, 'Sift'),
+    h('p', { class: 'sub' }, 'Not connected to a backend yet. Create config.js with your Supabase URL and anon key (see config.example.js and the README).')));
 }
 
 // ---------- topic chips ----------
@@ -120,13 +136,11 @@ function flushSeen() {
   if (!seenQueue.size) return;
   const ids = [...seenQueue];
   seenQueue.clear();
-  const body = JSON.stringify({ ids });
-  if (navigator.sendBeacon && document.visibilityState === 'hidden') navigator.sendBeacon('/api/seen', new Blob([body], { type: 'application/json' }));
-  else fetch('/api/seen', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true }).catch(() => {});
+  data.markSeen(ids).catch(() => ids.forEach((id) => seenQueue.add(id)));
 }
 
 // ---------- feed ----------
-const feed = { list: null, sentinel: null, loading: false, done: false, itemIds: [], recentKeys: [], recentTopics: [], dirty: false, scrollY: 0, el: null };
+const feed = { state: null, list: null, sentinel: null, loading: false, done: false, itemIds: [], recentKeys: [], recentTopics: [], dirty: false, scrollY: 0, el: null };
 
 function resetFeed() {
   feed.el = null;
@@ -135,7 +149,7 @@ function resetFeed() {
 
 function renderFeed() {
   if (feed.el && !feed.dirty) { view.replaceChildren(feed.el); requestAnimationFrame(() => scrollTo(0, feed.scrollY)); return; }
-  Object.assign(feed, { loading: false, done: false, itemIds: [], recentKeys: [], recentTopics: [], dirty: false, scrollY: 0 });
+  Object.assign(feed, { state: null, loading: false, done: false, itemIds: [], recentKeys: [], recentTopics: [], dirty: false, scrollY: 0 });
   feed.list = h('div', { class: 'feed' });
   feed.status = h('div', { class: 'status' });
   feed.sentinel = h('div', { style: { height: '1px' } });
@@ -154,11 +168,14 @@ async function loadMore(first = false) {
   feed.loading = true;
   const list = feed.list;
   try {
-    const cards = await api('/feed', {
-      method: 'POST',
-      body: { n: first ? 8 : 12, topic_id: filterTopic, exclude_items: feed.itemIds, recent_keys: feed.recentKeys.slice(-60), recent_topics: feed.recentTopics.slice(-2) },
+    if (!feed.state) {
+      const state = await data.feedState();
+      if (list !== feed.list) return; // feed was reset meanwhile
+      feed.state = state;
+    }
+    const cards = buildFeed(feed.state, {
+      n: first ? 8 : 12, topicId: filterTopic, excludeItems: feed.itemIds, recentKeys: feed.recentKeys.slice(-60), recentTopics: feed.recentTopics.slice(-2),
     });
-    if (list !== feed.list) return; // feed was reset meanwhile
     if (first) list.replaceChildren();
     for (const c of cards) {
       if (c.item_id) feed.itemIds.push(c.item_id);
@@ -170,7 +187,7 @@ async function loadMore(first = false) {
       feed.done = true;
       if (!list.children.length) {
         list.replaceChildren(h('div', { class: 'empty' }, h('h3', {}, 'Nothing here yet'),
-          h('p', {}, 'Sources are fetched every hour. Add sources or card types in Settings, or tap refresh in a minute.')));
+          h('p', {}, 'Sources are fetched every hour. Add sources or card types in Settings, or use "Fetch all now" there.')));
       } else feed.status.textContent = "You're all caught up.";
     }
   } catch (e) {
@@ -222,10 +239,16 @@ function renderCard(c, { savedId } = {}) {
   let savedCardId = savedId ?? null;
   const btns = reactionButtons(c, {
     initialSaved: savedId != null,
-    onReact: async (r) => { if (r && c.generator_id) await api(`/generators/${c.generator_id}/react`, { method: 'POST', body: { reaction: r } }); },
+    onReact: async (r) => {
+      // 👍/👎 on a generated card nudges that card type's share of its topic.
+      const g = feed.state?.generators.find((x) => x.id === c.generator_id);
+      if (!r || !g) return;
+      g.weight = Math.min(10, Math.max(0.1, g.weight * (r > 0 ? 1.1 : 0.85)));
+      await data.setGeneratorWeight(g.id, g.weight);
+    },
     onSave: async (s) => {
-      if (s) savedCardId = (await api('/saved-cards', { method: 'POST', body: { topic_id: c.topic_id, payload: c } })).id;
-      else if (savedCardId) { await api(`/saved-cards/${savedCardId}`, { method: 'DELETE' }); savedCardId = null; }
+      if (s) savedCardId = await data.saveCard(c.topic_id, c);
+      else if (savedCardId) { await data.deleteSavedCard(savedCardId); savedCardId = null; }
     },
   });
   card.append(metaRow(c, [c.generator]), ...body, h('div', { class: 'actions' }, h('span', { class: 'spacer' }), ...btns));
@@ -239,8 +262,8 @@ function renderArticle(c, card) {
   const img = safeUrl(c.image) ? h('img', { class: 'thumb', src: c.image, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer', onerror: (e) => e.target.remove() }) : null;
   const btns = reactionButtons(c, {
     initialReaction: c.reaction, initialSaved: c.saved,
-    onReact: (r) => api(`/items/${c.item_id}/react`, { method: 'POST', body: { reaction: r } }),
-    onSave: (s) => api(`/items/${c.item_id}/save`, { method: 'POST', body: { saved: s } }),
+    onReact: (r) => data.reactItem(c.item_id, r),
+    onSave: (s) => data.saveItem(c.item_id, s),
   });
   card.dataset.item = c.item_id;
   card.append(
@@ -271,7 +294,12 @@ const GEN_RENDER = {
     const area = h('div');
     const grade = async (g) => {
       try {
-        const r = await api(`/cards/${c.card_id}/review`, { method: 'POST', body: { grade: g } });
+        const deck = feed.state?.decks[c.deck_id];
+        const card = deck && [...deck.due, ...deck.new].find((x) => x.id === c.card_id);
+        if (!card) throw new Error('Card is no longer in the queue; refresh the feed.');
+        const r = scheduleReview(card, g);
+        await data.updateCard(card.id, r);
+        applyReviewToDeck(deck, card, r);
         const days = r.interval_days;
         area.replaceChildren(h('p', { class: 'graded' }, g === 'again' ? "We'll show it again in a few minutes." : `Next review in ${days < 1.5 ? '1 day' : `${Math.round(days)} days`}.`));
       } catch (e) { toast(e.message); }
@@ -435,12 +463,12 @@ function tone(midi, t, dur) {
 async function renderSaved() {
   view.replaceChildren(h('div', { class: 'skeleton' }));
   try {
-    const { items, cards } = await api('/saved');
+    const { items, cards } = await data.saved();
     const all = [
       ...items.map((r) => ({ at: r.saved_at, el: renderCard({ key: `item:${r.id}`, kind: 'article', item_id: r.id, topic_id: r.topic_id, title: r.title, summary: (r.summary || '').trim(), url: r.url, domain: r.domain, image: r.image, source: r.source_name, comments_url: r.comments_url, score: r.community_score, comments: r.comment_count, published_at: r.published_at, reaction: r.reaction, saved: true }) })),
       ...cards.map((c) => ({ at: c.saved_at, el: renderCard({ ...c.payload, topic_id: c.topic_id ?? c.payload.topic_id }, { savedId: c.id }) })),
     ].sort((a, b) => b.at - a.at);
-    view.replaceChildren(all.length ? h('div', { class: 'feed' }, all.map((x) => x.el))
+    view.replaceChildren(all.length ? h('div', { class: 'feed saved-list' }, all.map((x) => x.el))
       : h('div', { class: 'empty' }, h('h3', {}, 'Nothing saved yet'), h('p', {}, 'Tap the bookmark on any card to keep it here.')));
   } catch (e) { view.replaceChildren(h('p', { class: 'status' }, e.message)); }
 }
@@ -452,7 +480,9 @@ async function renderSettings(tab = 'sources') {
   await loadMeta().catch(() => {});
   const seg = h('div', { class: 'seg', role: 'tablist' }, TABS.map(([k, label]) => h('button', { 'aria-pressed': String(k === tab), onclick: () => { location.hash = `#/settings/${k}`; } }, label)));
   const body = h('div');
-  view.replaceChildren(seg, body);
+  const footer = h('div', { class: 'toolbar', style: { justifyContent: 'center', marginTop: '32px' } },
+    h('button', { class: 'btn', onclick: async () => { await data.signOut(); location.reload(); } }, 'Sign out'));
+  view.replaceChildren(seg, body, footer);
   try { await SETTINGS[tab](body); } catch (e) { body.replaceChildren(h('p', { class: 'status' }, e.message)); }
 }
 const rerender = () => { feed.dirty = true; renderSettings(route().arg); };
@@ -468,7 +498,7 @@ const rowEl = ({ dot, title, desc, err, right, onclick }) => h('div', { class: '
 
 const SETTINGS = {
   async topics(body) {
-    const topics = await api('/topics');
+    const topics = await data.topics();
     const total = topics.filter((t) => t.enabled).reduce((s, t) => s + t.weight, 0) || 1;
     body.append(
       h('p', { class: 'intro' }, 'Topics are the channels in your feed. Weight controls how much of the feed each one gets.'),
@@ -476,14 +506,14 @@ const SETTINGS = {
         topics.map((t) => rowEl({
           dot: t.color, title: t.name,
           desc: t.enabled ? `${Math.round((t.weight / total) * 100)}% of feed · ${Math.round(t.curated_ratio * 100)}% articles when available` : 'Hidden',
-          right: toggle(t.enabled, async (v) => { await api(`/topics/${t.id}`, { method: 'PUT', body: { enabled: v } }); rerender(); }),
+          right: toggle(t.enabled, async (v) => { await data.update('topics', t.id, { enabled: v }).catch(fail); rerender(); }),
           onclick: () => editTopic(t),
         })),
         rowEl({ title: h('span', { class: 'add-row' }, '+ Add topic'), onclick: () => editTopic(null) })),
     );
   },
   async sources(body) {
-    const sources = await api('/sources');
+    const sources = await data.sourceStats();
     body.append(h('p', { class: 'intro' }, 'Where articles come from. Strict sources and score thresholds keep the feed useful.'));
     for (const t of meta.topics) {
       const mine = sources.filter((s) => s.topic_id === t.id);
@@ -493,17 +523,17 @@ const SETTINGS = {
             title: s.name,
             desc: s.last_error ? `Error: ${s.last_error}` : `${meta.source_kinds[s.kind]?.label || s.kind} · ${s.unseen_count} unread${s.last_fetched ? ` · fetched ${ago(s.last_fetched)} ago` : ' · not fetched yet'}`,
             err: !!s.last_error,
-            right: toggle(s.enabled, async (v) => { await api(`/sources/${s.id}`, { method: 'PUT', body: { enabled: v } }); feed.dirty = true; }),
+            right: toggle(s.enabled, async (v) => { await data.update('sources', s.id, { enabled: v }).catch(fail); feed.dirty = true; }),
             onclick: () => editSource(s),
           })),
-          rowEl({ title: h('span', { class: 'add-row' }, '+ Add source'), onclick: () => editSource({ topic_id: t.id, kind: 'rss', config: {}, weight: 1, enabled: 1 }) })));
+          rowEl({ title: h('span', { class: 'add-row' }, '+ Add source'), onclick: () => editSource({ topic_id: t.id, kind: 'rss', config: {}, weight: 1, enabled: true }) })));
     }
     const fetchBtn = h('button', {
       class: 'btn',
       onclick: async () => {
         fetchBtn.disabled = true; fetchBtn.textContent = 'Fetching…';
         try {
-          const r = await api('/fetch', { method: 'POST' });
+          const r = await data.fetcher('fetch_all');
           const added = Object.values(r).reduce((s, x) => s + (x.added || 0), 0);
           toast(`${added} new article${added === 1 ? '' : 's'}`); rerender();
         } catch (e) { toast(e.message); fetchBtn.disabled = false; fetchBtn.textContent = 'Fetch all now'; }
@@ -512,7 +542,7 @@ const SETTINGS = {
     body.append(h('div', { class: 'toolbar' }, fetchBtn));
   },
   async cards(body) {
-    const gens = await api('/generators');
+    const gens = await data.generators();
     body.append(h('p', { class: 'intro' }, 'Practice cards made from code and your own decks and lists. They keep the feed going when articles run out.'));
     for (const t of meta.topics) {
       const mine = gens.filter((g) => g.topic_id === t.id);
@@ -520,14 +550,14 @@ const SETTINGS = {
         h('div', { class: 'list' },
           mine.map((g) => rowEl({
             title: g.name, desc: `${meta.generator_kinds[g.kind]?.label || g.kind} · weight ${(+g.weight).toFixed(1)}`,
-            right: toggle(g.enabled, async (v) => { await api(`/generators/${g.id}`, { method: 'PUT', body: { enabled: v } }); feed.dirty = true; }),
+            right: toggle(g.enabled, async (v) => { await data.update('generators', g.id, { enabled: v }).catch(fail); feed.dirty = true; }),
             onclick: () => editGenerator(g),
           })),
-          rowEl({ title: h('span', { class: 'add-row' }, '+ Add card type'), onclick: () => editGenerator({ topic_id: t.id, kind: 'prompts', config: {}, weight: 1, enabled: 1 }) })));
+          rowEl({ title: h('span', { class: 'add-row' }, '+ Add card type'), onclick: () => editGenerator({ topic_id: t.id, kind: 'prompts', config: {}, weight: 1, enabled: true }) })));
     }
   },
   async decks(body) {
-    const decks = await api('/decks');
+    const decks = await data.deckStats();
     body.append(
       h('p', { class: 'intro' }, 'Flashcard decks for spaced repetition. Show one in the feed by adding a "Flashcards" card type.'),
       h('div', { class: 'list' },
@@ -591,21 +621,30 @@ function schemaFields(fields, config) {
   return { el: h('div', {}, els), read: () => Object.fromEntries(Object.entries(getters).map(([k, g]) => [k, g()])) };
 }
 
-async function saveRow(table, row, data) {
+async function saveRow(table, row, values) {
   try {
-    if (row?.id) await api(`/${table}/${row.id}`, { method: 'PUT', body: data });
-    else await api(`/${table}`, { method: 'POST', body: data });
+    if (row?.id) await data.update(table, row.id, values);
+    else {
+      if (table === 'topics') values.position = await data.nextTopicPosition();
+      const row = await data.insert(table, values);
+      if (table === 'sources') {
+        // Fetch a new source straight away instead of waiting for the hourly job.
+        data.fetcher('fetch_source', { id: row.id })
+          .then((r) => { toast(r.error ? `Fetch failed: ${r.error}` : `${r.added} new from ${row.name}`); feed.dirty = true; rerender(); })
+          .catch(fail);
+      }
+    }
     closeSheet(); toast('Saved'); rerender();
   } catch (e) { toast(e.message); }
 }
 async function deleteRow(table, row, what) {
   if (!confirm(`Delete ${what}?`)) return;
-  await api(`/${table}/${row.id}`, { method: 'DELETE' });
+  try { await data.remove(table, row.id); } catch (e) { return fail(e); }
   closeSheet(); toast('Deleted'); rerender();
 }
 
 function editTopic(t) {
-  t ||= { name: '', color: '#64748b', weight: 2, curated_ratio: 0.5, enabled: 1 };
+  t ||= { name: '', color: '#64748b', weight: 2, curated_ratio: 0.5, enabled: true };
   const name = h('input', { type: 'text', value: t.name, placeholder: 'e.g. Chess' });
   const color = h('input', { type: 'color', value: t.color });
   const wOut = h('b', {}, String(t.weight));
@@ -639,15 +678,15 @@ function editSource(s) {
   };
   kind.onchange = renderKind;
   renderKind();
-  const data = () => ({ name: name.value.trim() || defaultName(kind.value, form.read()), topic_id: +topic.value, kind: kind.value, config: form.read(), include: include.value, exclude: exclude.value, weight: +weight.value || 1, enabled: s.enabled ?? 1 });
+  const values = () => ({ name: name.value.trim() || defaultName(kind.value, form.read()), topic_id: +topic.value, kind: kind.value, config: form.read(), include: include.value, exclude: exclude.value, weight: +weight.value || 1, enabled: s.enabled ?? true });
   const previewBtn = h('button', {
     class: 'btn',
     onclick: async () => {
       previewBtn.disabled = true; preview.replaceChildren(h('div', { class: 'sub' }, 'Fetching…'));
       try {
-        const items = await api('/sources/preview', { method: 'POST', body: data() });
-        preview.replaceChildren(h('div', { class: 'sub' }, `${items.length} item${items.length === 1 ? '' : 's'} pass your filters${items.length === 15 ? ' (showing 15)' : ''}:`),
-          items.map((i) => h('div', { class: 'pv' }, h('b', {}, i.title), h('div', {}, [i.community_score != null ? `▲ ${i.community_score}` : null, i.published ? ago(i.published) : null].filter(Boolean).join(' · ')))));
+        const items = await data.fetcher('preview', { source: values() });
+        preview.replaceChildren(h('div', { class: 'sub' }, `${items.length} item${items.length === 1 ? ' passes' : 's pass'} your filters${items.length === 15 ? ' (showing 15)' : ''}:`),
+          ...items.map((i) => h('div', { class: 'pv' }, h('b', {}, i.title), h('div', {}, [i.community_score != null ? `▲ ${i.community_score}` : null, i.published ? ago(i.published) : null].filter(Boolean).join(' · ')))));
       } catch (e) { preview.replaceChildren(h('div', { class: 'sub', style: { color: 'var(--bad)' } }, e.message)); }
       previewBtn.disabled = false;
     },
@@ -658,9 +697,9 @@ function editSource(s) {
     field('Skip if it mentions', exclude, 'Comma-separated keywords.'),
     field('Weight', weight, '1 = normal. Higher ranks this source above others.'),
     h('div', { class: 'toolbar' },
-      h('button', { class: 'btn primary', onclick: () => saveRow('sources', s, data()) }, 'Save'),
+      h('button', { class: 'btn primary', onclick: () => saveRow('sources', s, values()) }, 'Save'),
       previewBtn,
-      s.id ? h('button', { class: 'btn', onclick: async () => { const r = await api(`/sources/${s.id}/fetch`, { method: 'POST' }); toast(r.error ? r.error : `${r.added} new`); } }, 'Fetch now') : null,
+      s.id ? h('button', { class: 'btn', onclick: async () => { try { const r = await data.fetcher('fetch_source', { id: s.id }); toast(r.error ? r.error : `${r.added} new`); feed.dirty = true; } catch (e) { fail(e); } } }, 'Fetch now') : null,
       s.id ? h('button', { class: 'btn danger', onclick: () => deleteRow('sources', s, `"${s.name}"`) }, 'Delete') : null),
     preview));
 }
@@ -687,16 +726,18 @@ function editGenerator(g) {
   };
   kind.onchange = renderKind;
   renderKind();
-  const data = () => ({ name: name.value.trim() || meta.generator_kinds[kind.value].label, topic_id: +topic.value, kind: kind.value, config: form.read(), weight: +weight.value || 1, enabled: g.enabled ?? 1 });
+  const values = () => ({ name: name.value.trim() || meta.generator_kinds[kind.value].label, topic_id: +topic.value, kind: kind.value, config: form.read(), weight: +weight.value || 1, enabled: g.enabled ?? true });
   openSheet(g.id ? 'Edit card type' : 'New card type', h('div', {},
     field('Kind', kind), kindBox, field('Name', name), field('Topic', topic),
     field('Weight', weight, 'How often this appears relative to other card types in the topic. 👍/👎 on cards adjusts this.'),
     h('div', { class: 'toolbar' },
-      h('button', { class: 'btn primary', onclick: () => saveRow('generators', g, data()) }, 'Save'),
+      h('button', { class: 'btn primary', onclick: () => saveRow('generators', g, values()) }, 'Save'),
       g.id ? h('button', {
         class: 'btn',
         onclick: async () => {
-          const c = await api(`/generators/${g.id}/sample`);
+          const state = await data.feedState();
+          const card = generateOne(state, g);
+          const c = card && { ...card, topic_id: g.topic_id, generator_id: g.id, generator: g.name };
           preview.replaceChildren(c ? renderCard(c) : h('div', { class: 'sub' }, 'Nothing to show right now (e.g. no cards due and the daily new-card limit was reached).'));
         },
       }, 'Preview (saved settings)') : null,
@@ -717,9 +758,9 @@ async function editDeck(d) {
           if (!name.value.trim()) return toast('Name is required');
           try {
             let id = d?.id;
-            if (id) await api(`/decks/${id}`, { method: 'PUT', body: { name: name.value } });
-            else id = (await api('/decks', { method: 'POST', body: { name: name.value } })).id;
-            if (csv.value.trim()) { const r = await api(`/decks/${id}/import`, { method: 'POST', body: { csv: csv.value } }); toast(`Added ${r.imported} cards`); } else toast('Saved');
+            if (id) await data.update('decks', id, { name: name.value.trim() });
+            else id = (await data.insert('decks', { name: name.value.trim() })).id;
+            if (csv.value.trim()) toast(`Added ${await data.importCards(id, csv.value)} cards`); else toast('Saved');
             closeSheet(); rerender();
           } catch (e) { toast(e.message); }
         },
@@ -728,11 +769,11 @@ async function editDeck(d) {
     d ? h('div', { class: 'section-h' }, 'Cards') : null, d ? list : null);
   openSheet(d ? 'Edit deck' : 'New deck', content);
   if (d) {
-    const cards = await api(`/decks/${d.id}/cards`);
+    const cards = await data.deckCards(d.id);
     list.replaceChildren(...cards.slice(0, 500).map((c) => h('div', { class: 'row' },
       h('div', { class: 'grow' }, h('div', { class: 'title' }, `${c.front} — ${c.back}`),
         h('div', { class: 'desc' }, c.due ? `next ${c.due <= Date.now() ? 'now' : `in ${ago(2 * Date.now() - c.due)}`}` : 'new')),
-      h('button', { class: 'act', 'aria-label': 'Delete card', onclick: async (e) => { await api(`/cards/${c.id}`, { method: 'DELETE' }); e.target.closest('.row').remove(); } }, '✕'))));
+      h('button', { class: 'act', 'aria-label': 'Delete card', onclick: async (e) => { try { await data.remove('cards', c.id); e.target.closest('.row').remove(); } catch (ex) { fail(ex); } } }, '✕'))));
     if (!cards.length) list.append(h('div', { class: 'row' }, h('div', { class: 'desc' }, 'No cards yet.')));
   }
 }
@@ -756,7 +797,9 @@ window.addEventListener('hashchange', onRoute);
 $('#refresh').onclick = () => { flushSeen(); if (route().name !== 'feed') location.hash = '#/'; else { feed.el = null; renderFeed(); } };
 
 (async function init() {
-  try { await loadMeta(); } catch { return; }
+  if (!data) return showSetup();
+  if (!(await data.session().catch(() => null))) return showLogin();
+  try { await loadMeta(); } catch (e) { view.replaceChildren(h('p', { class: 'status' }, `Couldn't connect: ${e.message}`)); return; }
   onRoute();
-  if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+  if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 })();

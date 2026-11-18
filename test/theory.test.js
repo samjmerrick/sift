@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spellChord, spellScale, noteName, relativeMinor, signatureAccidentals } from '../src/theory.js';
+import { spellChord, spellScale, noteName, relativeMinor, signatureAccidentals } from '../public/lib/theory.js';
 
 const names = (ns) => ns.map(noteName).join(' ');
 

@@ -1,37 +1,9 @@
-// Fetches articles from configured sources. Filtering is rules + community scores, not an LLM.
+// Fetches and filters articles from configured sources. Filtering is rules + community scores, not an LLM.
+// Runtime-agnostic (Node 20+ and Deno): uses only fetch, TextDecoder and fast-xml-parser.
 import { XMLParser } from 'fast-xml-parser';
 
 const UA = 'Sift/0.1 (personal feed reader)';
 const DAY = 86400000;
-
-export const SOURCE_KINDS = {
-  rss: {
-    label: 'RSS / Atom feed',
-    description: 'Any RSS or Atom feed: blogs, Substack (/feed), YouTube channels (youtube.com/feeds/videos.xml?channel_id=…), arXiv, podcasts.',
-    fields: [
-      { key: 'url', label: 'Feed URL', type: 'text', default: '' },
-      { key: 'max_age_days', label: 'Ignore posts older than (days)', type: 'number', default: 14 },
-    ],
-  },
-  hn: {
-    label: 'Hacker News',
-    description: 'Popular HN stories. Use the keyword filter to keep only those on your topic.',
-    fields: [
-      { key: 'min_points', label: 'Minimum points', type: 'number', default: 150 },
-      { key: 'days', label: 'Look back (days)', type: 'number', default: 3 },
-    ],
-  },
-  reddit: {
-    label: 'Subreddit',
-    description: 'Top posts from a subreddit. Only posts above the score threshold are kept.',
-    fields: [
-      { key: 'subreddit', label: 'Subreddit (without r/)', type: 'text', default: '' },
-      { key: 'period', label: 'Top of the', type: 'select', options: ['day', 'week', 'month'], default: 'week' },
-      { key: 'limit', label: 'Max posts per fetch', type: 'number', default: 15 },
-      { key: 'min_score', label: 'Minimum upvotes', type: 'number', default: 50 },
-    ],
-  },
-};
 
 // ---------- text helpers ----------
 const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', hellip: '…', mdash: '—', ndash: '–', rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“', laquo: '«', raquo: '»' };
@@ -80,7 +52,7 @@ export function normaliseUrl(u) {
   }
 }
 export const titleKey = (t) => t.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
-const domainOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return null; } };
+export const domainOf = (u) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return null; } };
 const kwList = (s) => String(s || '').split(',').map((k) => k.trim()).filter(Boolean);
 const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 export function keywordRegex(keywords) {
@@ -90,23 +62,30 @@ export function keywordRegex(keywords) {
 }
 
 // ---------- HTTP ----------
-async function get(url, { timeout = 15000, maxBytes = 3_000_000, accept } = {}) {
+export async function get(url, { timeout = 15000, maxBytes = 3_000_000, accept } = {}) {
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), timeout);
   try {
-    const res = await fetch(url, { signal: ctl.signal, redirect: 'follow', headers: { 'User-Agent': UA, ...(accept ? { Accept: accept } : {}) } });
+    let res;
+    try {
+      res = await fetch(url, { signal: ctl.signal, redirect: 'follow', headers: { 'User-Agent': UA, ...(accept ? { Accept: accept } : {}) } });
+    } catch (err) {
+      const why = err.name === 'AbortError' ? 'timed out' : err.cause?.code || err.cause?.message || err.message;
+      throw new Error(`Could not reach ${new URL(url).hostname}: ${why}`);
+    }
     if (!res.ok) throw new Error(`HTTP ${res.status} from ${new URL(url).hostname}`);
     const reader = res.body.getReader();
-    const chunks = [];
+    const decoder = new TextDecoder();
+    let text = '';
     let size = 0;
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
-      chunks.push(value);
       size += value.length;
-      if (size > maxBytes) { ctl.abort(); break; }
+      text += decoder.decode(value, { stream: true });
+      if (size > maxBytes) { await reader.cancel().catch(() => {}); break; }
     }
-    return Buffer.concat(chunks).toString('utf8');
+    return text + decoder.decode();
   } finally {
     clearTimeout(timer);
   }
@@ -230,81 +209,3 @@ export async function previewSource(src) {
   });
 }
 
-// ---------- persistence ----------
-export async function fetchSource(db, src) {
-  let added = 0;
-  try {
-    const items = await previewSource(src);
-    const ins = db.prepare(`INSERT OR IGNORE INTO items
-      (source_id, topic_id, url, title, title_key, summary, image, domain, comments_url, community_score, comment_count, published_at, fetched_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
-    const dupTitle = db.prepare('SELECT 1 FROM items WHERE title_key = ? AND fetched_at > ? LIMIT 1');
-    const upd = db.prepare('UPDATE items SET community_score = ?, comment_count = ? WHERE url = ?');
-    const now = Date.now();
-    for (const i of items) {
-      const url = normaliseUrl(i.url);
-      const key = titleKey(i.title);
-      if (!key) continue;
-      if (i.community_score != null) upd.run(i.community_score, i.comment_count ?? null, url);
-      if (dupTitle.get(key, now - 14 * DAY)) continue;
-      const r = ins.run(src.id, src.topic_id, url, i.title.trim(), key, i.summary || '', i.image || null, domainOf(url),
-        i.comments_url || null, i.community_score ?? null, i.comment_count ?? null, Math.min(i.published || now, now), now);
-      added += Number(r.changes);
-    }
-    db.prepare('UPDATE sources SET last_fetched = ?, last_error = NULL WHERE id = ?').run(now, src.id);
-  } catch (err) {
-    db.prepare('UPDATE sources SET last_fetched = ?, last_error = ? WHERE id = ?').run(Date.now(), String(err.message || err), src.id);
-    return { added, error: String(err.message || err) };
-  }
-  return { added };
-}
-
-/** Fill in missing summaries from the page's meta description (cheap, capped per run). */
-export async function enrichSummaries(db, limit = 25) {
-  const rows = db.prepare(`SELECT id, url FROM items WHERE summary = '' AND seen_at IS NULL AND url NOT LIKE '%news.ycombinator.com%'
-    AND url NOT LIKE '%reddit.com%' ORDER BY fetched_at DESC LIMIT ?`).all(limit);
-  const upd = db.prepare('UPDATE items SET summary = ?, image = COALESCE(image, ?) WHERE id = ?');
-  let i = 0;
-  const worker = async () => {
-    while (i < rows.length) {
-      const row = rows[i++];
-      try {
-        const html = await get(row.url, { timeout: 8000, maxBytes: 400_000, accept: 'text/html' });
-        const meta = (name) => {
-          const re = new RegExp(`<meta[^>]+(?:property|name)=["']${name}["'][^>]*>`, 'i');
-          const tag = re.exec(html)?.[0];
-          return tag ? decodeEntities(/content=["']([^"']*)["']/i.exec(tag)?.[1] || '') : '';
-        };
-        const desc = meta('og:description') || meta('description') || meta('twitter:description');
-        const img = meta('og:image');
-        upd.run(truncate(htmlToText(desc)) || ' ', /^https?:/.test(img) ? img : null, row.id);
-      } catch {
-        upd.run(' ', null, row.id); // don't retry forever
-      }
-    }
-  };
-  await Promise.all([worker(), worker(), worker(), worker()]);
-}
-
-let running = null;
-export function fetchAll(db) {
-  if (running) return running;
-  running = (async () => {
-    const sources = db.prepare('SELECT * FROM sources WHERE enabled = 1').all();
-    const results = {};
-    let idx = 0;
-    const worker = async () => {
-      while (idx < sources.length) {
-        const s = sources[idx++];
-        results[s.name] = await fetchSource(db, s);
-      }
-    };
-    await Promise.all([worker(), worker(), worker()]);
-    await enrichSummaries(db);
-    // Housekeeping: drop old, unsaved items.
-    const now = Date.now();
-    db.prepare('DELETE FROM items WHERE saved_at IS NULL AND ((seen_at IS NOT NULL AND seen_at < ?) OR fetched_at < ?)').run(now - 30 * DAY, now - 60 * DAY);
-    return results;
-  })().finally(() => { running = null; });
-  return running;
-}

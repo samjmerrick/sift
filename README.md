@@ -1,6 +1,6 @@
 # Sift
 
-A personal, infinitely scrolling feed of useful things to read and practise, as a replacement for doomscrolling Reddit. It runs as a web app you add to your phone's home screen.
+A personal, infinitely scrolling feed of useful things to read and practise, as a replacement for doomscrolling Reddit. It's a web app you add to your phone's home screen.
 
 **No LLM involved.** Everything is curated by rules you control:
 
@@ -18,64 +18,105 @@ A personal, infinitely scrolling feed of useful things to read and practise, as 
 | Ear training | Plays an interval through the phone speaker; name it. |
 | Text cards | One random line from any list you paste in: practice prompts, tips, quotes. |
 
-Topics, sources, card types and decks are all configured in the app under **Settings**. Each has a **Preview** button so you can tune filters before saving.
+Topics, sources, card types and decks are all configured in the app under **Settings**. Sources have a **Preview** button so you can tune filters before saving.
 
-## Run it
+## How it's hosted (all free tiers)
 
-Requires Node 22.13+ (uses the built-in `node:sqlite`; the only dependency is an XML parser).
-
-```bash
-npm install
-SIFT_PASSWORD=choose-something npm start
+```
+GitHub Pages ──── the app (static files in public/)
+     │  supabase-js, signed in as you
+     ▼
+Supabase ──────── Postgres (all data, row level security: only signed-in users)
+     │            Edge Function `sift-fetch` (Preview / Fetch now buttons)
+     ▲
+GitHub Actions ── Deploy: test → apply migrations → deploy function → publish Pages   (on push to main)
+                  Fetch feeds: every hour, fetch all sources into the database
 ```
 
-Open http://localhost:3000. Sources are fetched on startup and then every hour.
+The feed ranking, card generation and spaced repetition run in the browser (`public/lib/`). Fetching runs in GitHub Actions and the Edge Function, which share the same code (`supabase/functions/_shared/`).
 
-| Env var | Default | |
+## Deploy
+
+**1. Supabase** ([supabase.com](https://supabase.com), free plan)
+
+1. Create a project and note the **database password**.
+2. **Authentication → Users → Add user**: create your own account (email and password, tick *auto confirm*).
+3. **Authentication → Sign In / Providers**: turn **off** "Allow new users to sign up". Sift is single-user: anyone signed in can see everything.
+4. Collect:
+   - **Project URL** and **anon / publishable key**: Project Settings → API (Keys).
+   - **Project ref**: the `xxxx` in `https://xxxx.supabase.co`.
+   - **Session pooler connection string**: the **Connect** button → *Session pooler*. Fill in your password. GitHub Actions needs the pooler because the direct connection is IPv6-only.
+   - **Access token**: [Account → Access Tokens](https://supabase.com/dashboard/account/tokens).
+
+**2. GitHub repo settings**
+
+- **Settings → Pages → Build and deployment → Source: GitHub Actions.** On the free GitHub plan, Pages needs the repo to be public. Nothing secret is in the repo; the Supabase URL and anon key are designed to be public.
+- **Settings → Secrets and variables → Actions**:
+
+| Type | Name | Value |
 |---|---|---|
-| `PORT` | `3000` | |
-| `SIFT_PASSWORD` | *(none)* | Single-user password. **Set this** if the server is reachable from the internet. |
-| `SIFT_DB` | `./data/sift.db` | SQLite file. Back this up. It holds your decks and review history. |
-| `FETCH_INTERVAL_MINUTES` | `60` | |
-| `SIFT_NO_FETCH` | | Set to disable background fetching. |
+| Variable | `SUPABASE_URL` | `https://xxxx.supabase.co` |
+| Variable | `SUPABASE_ANON_KEY` | anon / publishable key |
+| Variable | `SUPABASE_PROJECT_REF` | `xxxx` |
+| Secret | `SUPABASE_ACCESS_TOKEN` | personal access token |
+| Secret | `SUPABASE_DB_PASSWORD` | database password |
+| Secret | `DATABASE_URL` | session pooler connection string |
 
-`npm run fetch` fetches everything once from the command line. `npm test` runs the tests.
+**3. Deploy**
 
-## Get it on your phone
+Push to `main`, or run the **Deploy** workflow from the Actions tab. It runs the tests, creates the tables and starter content, deploys the Edge Function and publishes the app. Then run **Fetch feeds** once by hand rather than waiting for the hourly run.
 
-The server needs to run somewhere your phone can reach. Any of these work:
+**4. On your phone**
 
-- **Home machine or Raspberry Pi + [Tailscale](https://tailscale.com)**: free and private. `tailscale serve 3000` gives you an HTTPS URL on your tailnet.
-- **Fly.io / Railway / Render / a small VPS**: use the Dockerfile and mount a volume at `/data`.
+Open `https://<your-github-username>.github.io/sift/`, sign in, and choose **Add to Home Screen** (Safari share menu, or the Chrome ⋮ menu). It opens full-screen like a native app.
 
-```bash
-docker build -t sift .
-docker run -d -p 3000:3000 -v sift-data:/data -e SIFT_PASSWORD=choose-something sift
-```
+### Free-tier notes
 
-Then open the URL on your phone and choose **Add to Home Screen** (Safari share menu, or the Chrome ⋮ menu). It opens full-screen like a native app. Installing requires HTTPS, except on `localhost`.
+- Supabase pauses free projects after about a week with no activity. The hourly fetch should keep it awake; if it pauses, restore it from the dashboard.
+- The hourly fetch uses about 1 Actions minute per run. That's free for public repos and roughly 720 of the 2,000 free minutes a month for private ones.
+- GitHub disables scheduled workflows in public repos after 60 days without a commit. Re-enable it from the Actions tab if that happens.
 
 ## Tips for good sources
 
 - **YouTube channel** → RSS source with `https://www.youtube.com/feeds/videos.xml?channel_id=CHANNEL_ID`
 - **Substack** → `https://NAME.substack.com/feed`
 - **arXiv category** → `https://rss.arxiv.org/rss/cs.CL` (add include keywords; it's high volume)
-- **Subreddits** → raise *Minimum upvotes* until the preview looks like what you want. If Reddit blocks the JSON API from your server, Sift falls back to RSS, which has no scores.
+- **Subreddits** → raise *Minimum upvotes* until the preview looks right. If Reddit blocks the JSON API from GitHub's or Supabase's servers, Sift falls back to RSS, which has no scores.
 - **Hacker News** → keep the keyword list for the topic; the points threshold does the quality filtering.
 
-Importing flashcards: in **Settings → Decks**, paste lines of `front, back, note` (comma or tab separated; pasting from a spreadsheet works). Then add a *Flashcards* card type pointing at the deck.
+To import flashcards, go to **Settings → Decks** and paste lines of `front, back, note` (comma or tab separated; pasting from a spreadsheet works). Then add a *Flashcards* card type that points at the deck.
 
-## How it works
+## Development
+
+Requires Node 20+ and a local Postgres.
+
+```bash
+npm install
+createdb sift_dev
+RESET_DB=1 DATABASE_URL=postgres://localhost/sift_dev npm run dev   # http://localhost:5173, any email/password signs in
+```
+
+`npm run dev` serves the app plus a minimal stand-in for the Supabase APIs the app uses, backed by your local Postgres with the real migrations and row level security. It's for UI work only; production talks to real Supabase. You can also use the official `supabase start` (Docker) with a `public/config.js` (see `config.example.js`).
+
+| Command | |
+|---|---|
+| `npm test` | Unit and database tests (needs Postgres; `TEST_DATABASE_URL`, default `postgres://postgres:postgres@localhost:5432/sift_test`). |
+| `node test/e2e.cjs` | Browser end-to-end test against `npm run dev` (needs Playwright). |
+| `npm run fetch` | Fetch all sources once (`DATABASE_URL`). |
+| `npm run build:seed` | Regenerate the starter-content migration from `seed/`. |
 
 ```
-src/server.js      HTTP API + static files, hourly fetch timer, optional password
-src/fetcher.js     RSS/Atom, Hacker News (Algolia API), Reddit; filtering, de-duplication, summaries
-src/feed.js        ranking + building feed pages (topic weights, interleaving, article/practice mix)
-src/generators.js  practice card kinds + spaced repetition
-src/theory.js      music theory (spelling, chords, scales, keys, chord shapes)
-src/db.js          SQLite schema + first-run seed (topics, sources, decks, card types)
-public/            the app: vanilla JS PWA, no build step
-seed/              starter Russian deck and practice prompts
+public/                       the app (vanilla JS, no build step)
+  app.js                      UI: feed, saved, settings
+  lib/feed.js                 ranking + building feed pages
+  lib/generators.js           practice card kinds + spaced repetition
+  lib/theory.js               music theory (spelling, chords, scales, keys, chord shapes)
+  lib/data.js                 all Supabase reads/writes
+supabase/migrations/          schema, row level security, feed_state() function, starter content
+supabase/functions/sift-fetch Edge Function (preview / fetch now)
+supabase/functions/_shared/   fetcher (RSS/Atom, HN, Reddit, filtering, de-dup) + database writes
+scripts/fetch.js              hourly fetch (GitHub Actions)
+.github/workflows/            deploy.yml, fetch.yml
 ```
 
 Ranking is `source weight × community score factor × recency decay × your affinity for that source × your affinity for that domain`. Articles are marked read once they have been at least half on screen for about a second, and they never show again.
