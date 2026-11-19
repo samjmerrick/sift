@@ -1,0 +1,126 @@
+{
+ "name": "International development",
+ "description": "Development economics, aid, global health and humanitarian reporting: Our World in Data, The New Humanitarian, UN News, GiveWell and more.",
+ "topics": [
+  {
+   "name": "International development",
+   "category": "News",
+   "color": "#ca8a04",
+   "weight": 2,
+   "curated_ratio": 1,
+   "sources": [
+    {
+     "kind": "rss",
+     "name": "Our World in Data",
+     "config": {
+      "url": "https://ourworldindata.org/atom.xml",
+      "max_age_days": 45
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1.4
+    },
+    {
+     "kind": "rss",
+     "name": "The New Humanitarian",
+     "config": {
+      "url": "https://www.thenewhumanitarian.org/rss/all.xml",
+      "max_age_days": 14
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1.3
+    },
+    {
+     "kind": "rss",
+     "name": "UN News",
+     "config": {
+      "url": "https://news.un.org/feed/subscribe/en/news/all/rss.xml",
+      "max_age_days": 3
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 0.7
+    },
+    {
+     "kind": "rss",
+     "name": "Devpolicy Blog",
+     "config": {
+      "url": "https://devpolicy.org/feed/",
+      "max_age_days": 14
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1
+    },
+    {
+     "kind": "rss",
+     "name": "GiveWell blog",
+     "config": {
+      "url": "https://blog.givewell.org/feed/",
+      "max_age_days": 30
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1
+    },
+    {
+     "kind": "rss",
+     "name": "IDS (Institute of Development Studies)",
+     "config": {
+      "url": "https://www.ids.ac.uk/feed",
+      "max_age_days": 30
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1
+    },
+    {
+     "kind": "rss",
+     "name": "Africa Is a Country",
+     "config": {
+      "url": "https://africasacountry.com/feed",
+      "max_age_days": 14
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 0.9
+    },
+    {
+     "kind": "rss",
+     "name": "ICTworks",
+     "config": {
+      "url": "https://www.ictworks.org/feed/",
+      "max_age_days": 30
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 0.7
+    },
+    {
+     "kind": "rss",
+     "name": "GiveDirectly",
+     "config": {
+      "url": "https://www.givedirectly.org/feed/",
+      "max_age_days": 60
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 0.6
+    },
+    {
+     "kind": "rss",
+     "name": "UK FCDO (policy and aid)",
+     "config": {
+      "url": "https://www.gov.uk/government/organisations/foreign-commonwealth-development-office.atom",
+      "max_age_days": 14
+     },
+     "include": "",
+     "exclude": "travel advice",
+     "weight": 0.8
+    }
+   ],
+   "cards": []
+  }
+ ]
+}

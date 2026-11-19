@@ -80,7 +80,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(`FAILED: ${msg}`); co
   assert(count >= 40, `infinite scroll keeps loading (${count} cards)`);
   assert(kinds.has('article') && kinds.has('flashcard') && kinds.size >= 6, `mixes card kinds: ${[...kinds].join(', ')}`);
 
-  await p.click('.chip:has-text("Russian")');
+  await p.click('.chip:has-text("Languages")');
   await p.waitForSelector('.k-flashcard .reveal');
   await p.click('.k-flashcard .reveal');
   await p.click('.k-flashcard .grade .good');
@@ -144,7 +144,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(`FAILED: ${msg}`); co
   const titles = await p.$$eval('.row .title', (t) => t.map((x) => x.textContent));
   assert(titles.indexOf('Chess') === 4, 'new topic is added at the end');
 
-  await p.click('.seg button:has-text("Card types")');
+  await p.click('.seg button:has-text("Cards")');
   await p.waitForSelector('.section-h:has-text("Chess")');
   await p.click('.section-h:has-text("Chess") + .list >> text=+ Add card type');
   await p.selectOption('.sheet select >> nth=0', 'prompts');
@@ -166,7 +166,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(`FAILED: ${msg}`); co
   await shot('decks');
 
   await p.click('a[data-tab=feed]');
-  await p.click('.chip:has-text("Chess")');
+  await p.click('.chip:has-text("Other")');
   await p.waitForSelector('.k-prompt');
   assert(true, 'new topic and card type appear in the feed');
 

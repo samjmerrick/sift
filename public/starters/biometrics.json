@@ -1,0 +1,104 @@
+{
+ "name": "Biometrics",
+ "description": "Biometric Update and ID Tech for industry news, plus keyword-filtered research, privacy and policy sources.",
+ "topics": [
+  {
+   "name": "Biometrics",
+   "category": "Tech",
+   "color": "#65a30d",
+   "weight": 1.5,
+   "curated_ratio": 1,
+   "sources": [
+    {
+     "kind": "rss",
+     "name": "Biometric Update",
+     "config": {
+      "url": "https://www.biometricupdate.com/feed",
+      "max_age_days": 14
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1.5
+    },
+    {
+     "kind": "rss",
+     "name": "ID Tech",
+     "config": {
+      "url": "https://idtechwire.com/feed/",
+      "max_age_days": 14
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1
+    },
+    {
+     "kind": "rss",
+     "name": "Biometrics Institute",
+     "config": {
+      "url": "https://www.biometricsinstitute.org/feed/",
+      "max_age_days": 60
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 0.8
+    },
+    {
+     "kind": "rss",
+     "name": "arXiv computer vision (biometrics only)",
+     "config": {
+      "url": "https://rss.arxiv.org/rss/cs.CV",
+      "max_age_days": 7
+     },
+     "include": "biometric, biometrics, face recognition, facial recognition, fingerprint, fingerprints, iris recognition, liveness, presentation attack, face verification, gait recognition",
+     "exclude": "",
+     "weight": 0.6
+    },
+    {
+     "kind": "hn",
+     "name": "Hacker News: biometrics",
+     "config": {
+      "min_points": 50,
+      "days": 7
+     },
+     "include": "biometric, biometrics, face recognition, facial recognition, fingerprint, fingerprints, iris recognition, liveness, presentation attack, deepfake, deepfakes, voice authentication, speaker verification, gait recognition, face verification, digital ID, identity verification",
+     "exclude": "",
+     "weight": 0.8
+    },
+    {
+     "kind": "rss",
+     "name": "Lobsters: privacy (biometrics only)",
+     "config": {
+      "url": "https://lobste.rs/t/privacy.rss",
+      "max_age_days": 30
+     },
+     "include": "biometric, biometrics, face recognition, facial recognition, fingerprint, digital ID",
+     "exclude": "",
+     "weight": 0.6
+    },
+    {
+     "kind": "rss",
+     "name": "EFF (biometrics and ID only)",
+     "config": {
+      "url": "https://www.eff.org/rss/updates.xml",
+      "max_age_days": 90
+     },
+     "include": "biometric, biometrics, face recognition, facial recognition, face surveillance, digital ID, mobile ID",
+     "exclude": "",
+     "weight": 0.8
+    },
+    {
+     "kind": "rss",
+     "name": "NIST (biometrics only)",
+     "config": {
+      "url": "https://www.nist.gov/news-events/news/rss.xml",
+      "max_age_days": 120
+     },
+     "include": "biometric, biometrics, face recognition, facial recognition, fingerprint, fingerprints, identity verification",
+     "exclude": "",
+     "weight": 0.7
+    }
+   ],
+   "cards": []
+  }
+ ]
+}

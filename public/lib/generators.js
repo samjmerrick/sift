@@ -3,6 +3,7 @@ import {
   CHORDS, SCALES, MAJOR_ROOTS, MINOR_ROOTS, CHORD_ROOTS, MAJOR_KEYS, INTERVALS,
   OPEN_SHAPES, BARRE_SHAPES, STANDARD_TUNING, STRING_NAMES,
   spellChord, spellScale, noteName, parseNote, pc, pcName, signatureAccidentals, relativeMinor,
+  STAFF, MIDDLE_C, keySigCount, keySigMap, writtenNote, staffNoteName, staffNoteMidi, octaveOf, letterOf,
 } from './theory.js';
 
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -191,6 +192,67 @@ export const GENERATOR_KINDS = {
       if (dir === 'both') dir = Math.random() < 0.5 ? 'up' : 'down';
       const notes = dir === 'down' ? [low + semis, low] : [low, low + semis];
       return { key: `ear:${iv}:${low}`, kind: 'ear', title: 'Name this interval', notes, harmonic: dir === 'harmonic', answer: name, direction: dir };
+    },
+  },
+
+  staff_notes: {
+    label: 'Sight reading: name the notes',
+    description: 'Notes on a treble, bass or grand staff to name, one note or a short passage. No instrument needed; tap to check and hear them.',
+    fields: [
+      { key: 'clef', label: 'Clef', type: 'select', options: ['treble', 'bass', 'either', 'grand'], default: 'treble', help: '"Either" picks treble or bass for each card; "grand" shows both staves together.' },
+      { key: 'notes', label: 'Notes per card', type: 'number', default: 1, help: '1 for a single note, up to 8 for a short passage.' },
+      { key: 'range', label: 'Range', type: 'select', options: ['staff', 'one_ledger', 'two_ledgers'], default: 'one_ledger' },
+      { key: 'max_leap', label: 'Largest step between notes', type: 'number', default: 2, help: 'In letter names: 1 = neighbours only, 2 = up to a 3rd, 4 = up to a 5th. Passages only.' },
+      { key: 'keys', label: 'Key signatures', type: 'multiselect', options: ['C', 'G', 'D', 'A', 'E', 'F', 'B♭', 'E♭', 'A♭'], default: 'C' },
+      { key: 'accidentals', label: 'Add the odd accidental (♯ ♭ ♮)', type: 'checkbox', default: false },
+      { key: 'audio', label: 'Play the notes', type: 'select', options: ['after_reveal', 'always', 'off'], default: 'after_reveal', help: 'Piano-like tones through the speaker. "After reveal" lets you read first, then check by ear.' },
+    ],
+    generate(cfg) {
+      const clefChoice = ['treble', 'bass', 'either', 'grand'].includes(cfg.clef) ? cfg.clef : 'treble';
+      const clef = clefChoice === 'either' ? pick(['treble', 'bass']) : clefChoice;
+      const extra = { staff: 0, one_ledger: 2, two_ledgers: 4 }[cfg.range] ?? 2;
+      const [lo, hi] = clef === 'grand' ? [STAFF.bass.bottom - extra, STAFF.treble.bottom + 8 + extra]
+        : [STAFF[clef].bottom - extra, STAFF[clef].bottom + 8 + extra];
+      const count = Math.min(8, Math.max(1, Math.round(Number(cfg.notes) || 1)));
+      const maxLeap = Math.min(7, Math.max(1, Math.round(Number(cfg.max_leap) || 2)));
+      const keyNames = list(cfg.keys).filter((k) => ['C', 'G', 'D', 'A', 'E', 'F', 'B♭', 'E♭', 'A♭'].includes(k));
+      const keyName = pick(keyNames.length ? keyNames : ['C']);
+      const keyN = keySigCount(keyName);
+      const inKey = keySigMap(keyN);
+
+      // Pick the written steps: a single note anywhere in range, or a gentle random walk.
+      const steps = [lo + Math.floor(Math.random() * (hi - lo + 1))];
+      while (steps.length < count) {
+        const prev = steps[steps.length - 1];
+        const options = [];
+        for (let s = -maxLeap; s <= maxLeap; s++) {
+          const d = prev + s;
+          if (d < lo || d > hi) continue;
+          const w = s === 0 ? 0.5 : Math.max(0.4, 4 - Math.abs(s));
+          options.push([d, w]);
+        }
+        let r = Math.random() * options.reduce((t, [, w]) => t + w, 0);
+        let next = options[options.length - 1][0];
+        for (const [d, w] of options) { r -= w; if (r <= 0) { next = d; break; } }
+        steps.push(next);
+      }
+
+      const notes = steps.map((d) => {
+        const base = inKey[letterOf(d)] ?? 0;
+        let explicit;
+        if (cfg.accidentals && Math.random() < 0.22) explicit = pick([-1, 0, 1].filter((a) => a !== base));
+        const n = writtenNote(d, keyN, explicit);
+        return { d, acc: n.acc, show: explicit !== undefined, staff: clef === 'grand' ? (d >= MIDDLE_C ? 'treble' : 'bass') : clef, name: staffNoteName(n), octave: octaveOf(d), midi: staffNoteMidi(n) };
+      });
+      const names = notes.map((n) => n.name);
+      return {
+        key: `staff:${clef}:${keyN}:${notes.map((n) => `${n.d}${n.acc}`).join('.')}`, kind: 'staff',
+        title: count === 1 ? 'Name this note' : `Name these ${count} notes`,
+        subtitle: [clef === 'grand' ? 'Grand staff' : STAFF[clef].label[0].toUpperCase() + STAFF[clef].label.slice(1), keyN ? `key of ${keyName} major` : null].filter(Boolean).join(' · '),
+        clef, keyN, notes, answer: names.join(' – '),
+        detail: notes.map((n) => `${n.name}${n.octave}`).join('  ') + (notes.some((n) => n.d === MIDDLE_C) ? '  (C4 = middle C)' : ''),
+        audio: ['after_reveal', 'always', 'off'].includes(cfg.audio) ? cfg.audio : 'after_reveal',
+      };
     },
   },
 

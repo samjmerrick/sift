@@ -1,0 +1,611 @@
+{
+ "name": "Machine learning: news & concepts",
+ "description": "ML news from research labs and newsletters, plus a learning topic with a 75-card concept deck, explainer channels and 'explain it' prompts.",
+ "decks": [
+  {
+   "name": "Machine learning concepts",
+   "cards": [
+    [
+     "Overfitting",
+     "The model fits noise in the training data and generalises badly to new data.",
+     "Sign: training loss keeps falling while validation loss rises."
+    ],
+    [
+     "Underfitting",
+     "The model is too simple (or under-trained) to capture the pattern, so it does badly even on the training data.",
+     ""
+    ],
+    [
+     "Bias–variance trade-off",
+     "Bias is error from overly simple assumptions; variance is error from sensitivity to the particular training set. More flexibility lowers bias but raises variance.",
+     ""
+    ],
+    [
+     "Regularisation",
+     "Anything that discourages an overly complex model: L1/L2 penalties, dropout, early stopping, data augmentation.",
+     ""
+    ],
+    [
+     "L2 regularisation (weight decay)",
+     "Adds the sum of squared weights to the loss, shrinking weights towards zero.",
+     "L1 (lasso) adds absolute values instead and tends to produce sparse weights."
+    ],
+    [
+     "Gradient descent",
+     "Repeatedly step the parameters against the gradient of the loss: θ ← θ − η∇L.",
+     ""
+    ],
+    [
+     "Learning rate",
+     "The step size in gradient descent. Too high: oscillation or divergence. Too low: very slow, may stall.",
+     ""
+    ],
+    [
+     "Mini-batch gradient descent",
+     "Estimate the gradient from a random subset of the data at each step: cheaper, noisier updates that often generalise better.",
+     ""
+    ],
+    [
+     "Backpropagation",
+     "Computes the gradient of the loss with respect to every weight by applying the chain rule backwards through the network.",
+     ""
+    ],
+    [
+     "Chain rule",
+     "d/dx f(g(x)) = f′(g(x)) · g′(x). The mathematical basis of backpropagation.",
+     ""
+    ],
+    [
+     "Loss function",
+     "A number measuring how wrong the predictions are; training minimises it.",
+     "MSE for regression, cross-entropy for classification."
+    ],
+    [
+     "Cross-entropy loss",
+     "−Σ y·log(p): heavily penalises giving low probability to the true class. The standard classification loss.",
+     ""
+    ],
+    [
+     "Softmax",
+     "Turns a vector of scores into probabilities that are positive and sum to 1: e^zᵢ / Σⱼ e^zⱼ.",
+     ""
+    ],
+    [
+     "Logits",
+     "The raw, unnormalised scores a model outputs before softmax or sigmoid.",
+     ""
+    ],
+    [
+     "Sigmoid",
+     "σ(x) = 1 / (1 + e^−x). Squashes any value into (0, 1); used for binary probabilities.",
+     ""
+    ],
+    [
+     "ReLU",
+     "max(0, x). Cheap and doesn't saturate for positive inputs; long the default hidden activation.",
+     "Risk: 'dead' units that always output 0."
+    ],
+    [
+     "Why do networks need non-linear activations?",
+     "Without them, stacked linear layers collapse into one linear layer, so the network could only learn linear functions.",
+     ""
+    ],
+    [
+     "Vanishing gradients",
+     "Gradients shrink as they flow back through many layers (e.g. saturating sigmoids), so early layers barely learn.",
+     "Helped by ReLU, residual connections, good initialisation and normalisation."
+    ],
+    [
+     "Exploding gradients",
+     "Gradients grow exponentially through the layers and training becomes unstable.",
+     "Helped by gradient clipping and careful initialisation."
+    ],
+    [
+     "Batch normalisation",
+     "Normalises a layer's inputs over the mini-batch, then rescales with learned parameters; stabilises and speeds up training.",
+     ""
+    ],
+    [
+     "Layer normalisation",
+     "Normalises across the features of a single example rather than across the batch. Standard in transformers.",
+     ""
+    ],
+    [
+     "Dropout",
+     "Randomly zeroes a fraction of activations during training so units can't co-adapt. A regulariser; switched off at inference.",
+     ""
+    ],
+    [
+     "Early stopping",
+     "Stop training when validation loss stops improving, before the model overfits.",
+     ""
+    ],
+    [
+     "Train / validation / test split",
+     "Train fits the parameters; validation tunes hyperparameters and picks models; test is used once, at the end, to estimate real-world performance.",
+     ""
+    ],
+    [
+     "Cross-validation",
+     "Split the data into k folds; train on k−1 and validate on the remaining one, rotating through all folds, then average. Useful when data is scarce.",
+     ""
+    ],
+    [
+     "Data leakage",
+     "Information from outside the training set (test data, or the target itself) sneaks into training, giving unrealistically good results.",
+     ""
+    ],
+    [
+     "Precision",
+     "TP / (TP + FP): of everything flagged positive, the share that really was.",
+     ""
+    ],
+    [
+     "Recall",
+     "TP / (TP + FN): of all the real positives, the share you found.",
+     ""
+    ],
+    [
+     "F1 score",
+     "The harmonic mean of precision and recall: 2PR / (P + R).",
+     ""
+    ],
+    [
+     "ROC AUC",
+     "The probability that a random positive is scored higher than a random negative. 0.5 is chance; 1.0 is perfect ranking.",
+     ""
+    ],
+    [
+     "Confusion matrix",
+     "A table of predicted vs actual classes: counts of true/false positives and negatives.",
+     ""
+    ],
+    [
+     "Class imbalance",
+     "When one class is rare, accuracy misleads (always predicting 'no' can score 99%). Use precision/recall, resampling or class weights.",
+     ""
+    ],
+    [
+     "Supervised vs unsupervised learning",
+     "Supervised learns from labelled examples (input → target); unsupervised finds structure in unlabelled data, e.g. clustering or dimensionality reduction.",
+     ""
+    ],
+    [
+     "Self-supervised learning",
+     "The labels come from the data itself, e.g. predict the next token or a masked patch. How most large language models are pretrained.",
+     ""
+    ],
+    [
+     "Reinforcement learning",
+     "An agent learns a policy by acting in an environment and maximising cumulative reward.",
+     ""
+    ],
+    [
+     "k-means",
+     "Clusters data into k groups by alternating two steps: assign each point to its nearest centroid, then move each centroid to the mean of its points.",
+     ""
+    ],
+    [
+     "k-nearest neighbours",
+     "Predict from the labels of the k closest training examples. No training step, but prediction gets slower as the data grows.",
+     ""
+    ],
+    [
+     "Decision tree",
+     "Splits the data with a series of if/else questions on features. Easy to interpret, prone to overfitting.",
+     ""
+    ],
+    [
+     "Random forest",
+     "Many decision trees trained on random subsets of the data and features, averaging their votes (bagging) to reduce variance.",
+     ""
+    ],
+    [
+     "Gradient boosting",
+     "Builds models one after another, each fitting the errors (the negative gradient of the loss) of the ensemble so far.",
+     "XGBoost and LightGBM are popular implementations."
+    ],
+    [
+     "Linear regression",
+     "Fits y ≈ w·x + b by minimising squared error; has a closed-form solution (the normal equations).",
+     ""
+    ],
+    [
+     "Logistic regression",
+     "A linear model followed by a sigmoid, giving a probability. Despite the name, it's used for classification.",
+     ""
+    ],
+    [
+     "PCA",
+     "Projects data onto the directions of greatest variance (the principal components) to reduce dimensionality.",
+     ""
+    ],
+    [
+     "Curse of dimensionality",
+     "As the number of dimensions grows, data becomes sparse and distances less meaningful, so you need far more data.",
+     ""
+    ],
+    [
+     "Embedding",
+     "A learned dense vector for an item (word, image, user) such that similar items end up close together.",
+     ""
+    ],
+    [
+     "Cosine similarity",
+     "(a·b) / (‖a‖‖b‖): the cosine of the angle between two vectors. Ignores magnitude; widely used to compare embeddings.",
+     ""
+    ],
+    [
+     "Convolution (in a CNN)",
+     "Slides a small learned filter over the input, reusing the same weights everywhere, so it detects local patterns wherever they appear.",
+     ""
+    ],
+    [
+     "Pooling",
+     "Downsamples feature maps (e.g. the max over each 2×2 window) to shrink them and add some translation invariance.",
+     ""
+    ],
+    [
+     "Recurrent neural network",
+     "Processes a sequence step by step, carrying a hidden state forward. Struggles with long-range dependencies; largely replaced by transformers.",
+     ""
+    ],
+    [
+     "Attention",
+     "Each position takes a weighted average of other positions' values, with weights from query–key similarity: softmax(QKᵀ/√d)·V.",
+     ""
+    ],
+    [
+     "Self-attention",
+     "Attention where the queries, keys and values all come from the same sequence, so every token can look at every other token.",
+     ""
+    ],
+    [
+     "Why divide by √d in attention?",
+     "Dot products grow with the dimension d, which pushes softmax into saturated regions with tiny gradients. Scaling keeps them well-behaved.",
+     ""
+    ],
+    [
+     "Transformer",
+     "A stack of self-attention and feed-forward blocks, with residual connections and layer norm. The basis of modern LLMs.",
+     "Introduced in 'Attention Is All You Need' (2017)."
+    ],
+    [
+     "Positional encoding",
+     "Information added to token embeddings so a transformer, which has no built-in sense of order, knows where each token sits.",
+     ""
+    ],
+    [
+     "Tokenisation",
+     "Splitting text into units (tokens), often sub-words from schemes like BPE, which the model maps to integer IDs.",
+     ""
+    ],
+    [
+     "Pretraining vs fine-tuning",
+     "Pretraining learns general representations from huge unlabelled data; fine-tuning adapts the model to a specific task with a smaller dataset.",
+     ""
+    ],
+    [
+     "Transfer learning",
+     "Reusing a model trained on one task as the starting point for another, saving data and compute.",
+     ""
+    ],
+    [
+     "Temperature (sampling)",
+     "Scales the logits before softmax: low values make output more deterministic, high values more random.",
+     ""
+    ],
+    [
+     "Perplexity",
+     "The exponential of the average negative log-likelihood per token. Lower means the language model is less surprised by the text.",
+     ""
+    ],
+    [
+     "RLHF",
+     "Reinforcement learning from human feedback: train a reward model on human preference comparisons, then optimise the language model against it.",
+     ""
+    ],
+    [
+     "Hallucination",
+     "When a generative model produces fluent but false or unsupported content.",
+     ""
+    ],
+    [
+     "Context window",
+     "The maximum number of tokens a model can take into account at once (prompt and output together).",
+     ""
+    ],
+    [
+     "Retrieval-augmented generation (RAG)",
+     "Look up relevant documents (often by embedding similarity) and put them in the prompt so the model can answer from them.",
+     ""
+    ],
+    [
+     "Diffusion model",
+     "Learns to reverse a gradual noising process. Generation starts from pure noise and denoises step by step.",
+     ""
+    ],
+    [
+     "GAN",
+     "A generator tries to fool a discriminator, which tries to tell real from fake; the two are trained against each other.",
+     ""
+    ],
+    [
+     "Autoencoder",
+     "A network that compresses its input to a small latent code and then reconstructs it, learning a useful representation.",
+     ""
+    ],
+    [
+     "KL divergence",
+     "Measures how one probability distribution differs from another. Not symmetric. Appears in VAEs and RL.",
+     ""
+    ],
+    [
+     "Maximum likelihood estimation",
+     "Choose the parameters that make the observed data most probable. Minimising cross-entropy is MLE for classification.",
+     ""
+    ],
+    [
+     "Bayes' theorem",
+     "P(A|B) = P(B|A) · P(A) / P(B): how to update a belief in light of evidence.",
+     ""
+    ],
+    [
+     "Adam optimiser",
+     "Gradient descent with a per-parameter adaptive step size, from running averages of the gradient and its square (momentum plus RMSProp).",
+     ""
+    ],
+    [
+     "Momentum",
+     "Keeps a running average of past gradients so updates keep moving in consistent directions and noise averages out.",
+     ""
+    ],
+    [
+     "Weight initialisation",
+     "Initial weights must break symmetry and keep activations and gradients at a sensible scale: Xavier/Glorot for tanh and sigmoid, He for ReLU.",
+     ""
+    ],
+    [
+     "Residual connection",
+     "Adds a layer's input to its output (y = x + F(x)), giving gradients a direct path and making very deep networks trainable.",
+     ""
+    ],
+    [
+     "Hyperparameter",
+     "A setting chosen before training (learning rate, number of layers, regularisation strength), as opposed to parameters learned from data.",
+     ""
+    ],
+    [
+     "Epoch, batch, iteration",
+     "An epoch is one pass over the training set; a batch is the samples used for one update; an iteration is one update.",
+     ""
+    ]
+   ]
+  }
+ ],
+ "topics": [
+  {
+   "name": "Machine learning",
+   "category": "Tech",
+   "color": "#c026d3",
+   "weight": 2,
+   "curated_ratio": 1,
+   "sources": [
+    {
+     "kind": "hn",
+     "name": "Hacker News: machine learning",
+     "config": {
+      "min_points": 150,
+      "days": 3
+     },
+     "include": "machine learning, deep learning, neural network, neural networks, transformer, transformers, diffusion, reinforcement learning, fine-tuning, embeddings, benchmark, training",
+     "exclude": "",
+     "weight": 1
+    },
+    {
+     "kind": "rss",
+     "name": "Import AI",
+     "config": {
+      "url": "https://importai.substack.com/feed",
+      "max_age_days": 21
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1.3
+    },
+    {
+     "kind": "rss",
+     "name": "Interconnects",
+     "config": {
+      "url": "https://www.interconnects.ai/feed",
+      "max_age_days": 21
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1
+    },
+    {
+     "kind": "rss",
+     "name": "Google Research blog",
+     "config": {
+      "url": "https://research.google/blog/rss/",
+      "max_age_days": 21
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 0.8
+    },
+    {
+     "kind": "rss",
+     "name": "Google DeepMind blog",
+     "config": {
+      "url": "https://deepmind.google/blog/rss.xml",
+      "max_age_days": 21
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 0.8
+    },
+    {
+     "kind": "rss",
+     "name": "BAIR blog (Berkeley)",
+     "config": {
+      "url": "https://bair.berkeley.edu/blog/feed.xml",
+      "max_age_days": 60
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 0.8
+    },
+    {
+     "kind": "rss",
+     "name": "Lobsters: ML",
+     "config": {
+      "url": "https://lobste.rs/t/ml.rss",
+      "max_age_days": 10
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1
+    },
+    {
+     "kind": "rss",
+     "name": "Two Minute Papers",
+     "config": {
+      "url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCbfYPyITQ-7l4upoX8nvctg",
+      "max_age_days": 21
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 0.7
+    }
+   ],
+   "cards": []
+  },
+  {
+   "name": "ML concepts",
+   "category": "Tech",
+   "color": "#a21caf",
+   "weight": 1.5,
+   "curated_ratio": 0.4,
+   "sources": [
+    {
+     "kind": "rss",
+     "name": "3Blue1Brown (neural networks, transformers)",
+     "config": {
+      "url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCYO_jab_esuFRV4b17AJtAw",
+      "max_age_days": 365
+     },
+     "include": "neural, network, networks, gradient, backpropagation, transformer, transformers, attention, GPT, LLM, LLMs, learning, language model, diffusion",
+     "exclude": "",
+     "weight": 1.2
+    },
+    {
+     "kind": "rss",
+     "name": "StatQuest",
+     "config": {
+      "url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCtYLUTtgS3k1Fg4y5tAhLbw",
+      "max_age_days": 365
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1.3
+    },
+    {
+     "kind": "rss",
+     "name": "Andrej Karpathy",
+     "config": {
+      "url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCXUPKJO5MZQN11PqgIvyuvQ",
+      "max_age_days": 730
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1.2
+    },
+    {
+     "kind": "rss",
+     "name": "Lilian Weng: Lil'Log",
+     "config": {
+      "url": "https://lilianweng.github.io/index.xml",
+      "max_age_days": 730
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1.2
+    },
+    {
+     "kind": "rss",
+     "name": "Ahead of AI (Sebastian Raschka)",
+     "config": {
+      "url": "https://magazine.sebastianraschka.com/feed",
+      "max_age_days": 60
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1
+    },
+    {
+     "kind": "rss",
+     "name": "Machine Learning Mastery",
+     "config": {
+      "url": "https://machinelearningmastery.com/feed/",
+      "max_age_days": 30
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 0.7
+    },
+    {
+     "kind": "rss",
+     "name": "Eugene Yan",
+     "config": {
+      "url": "https://eugeneyan.com/rss/",
+      "max_age_days": 365
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 0.8
+    }
+   ],
+   "cards": [
+    {
+     "kind": "flashcards",
+     "name": "Concept deck",
+     "config": {
+      "deck": "Machine learning concepts",
+      "new_per_day": 5
+     },
+     "weight": 2
+    },
+    {
+     "kind": "prompts",
+     "name": "Explain it",
+     "config": {
+      "label": "Explain it",
+      "lines": [
+       "Explain backpropagation in two sentences without using the word 'gradient'.",
+       "Your validation loss is far above your training loss. What do you check first?",
+       "Sketch sigmoid, tanh and ReLU from memory. Where does each saturate?",
+       "Pick a paper abstract from today's reading and restate it in plain language.",
+       "Derive the gradient of mean squared error for linear regression with a single weight.",
+       "Write softmax in numpy. Why do you subtract the max before exponentiating?",
+       "Explain precision versus recall to a friend using a spam filter.",
+       "Why do we shuffle the training data between epochs?",
+       "What does learning-rate warmup do, and when would you use it?",
+       "Draw one transformer block. Which connections are residual?",
+       "Compute the cross-entropy loss for probabilities (0.7, 0.2, 0.1) when the true class is the first one.",
+       "Why use embeddings rather than one-hot vectors for words?",
+       "What does a confusion matrix tell you that accuracy doesn't?",
+       "How would you detect data leakage in a project you've been handed?",
+       "Explain how dropout behaves differently at training time and inference time.",
+       "When would you pick gradient boosting over a neural network for tabular data?",
+       "What is the difference between a loss function and an evaluation metric?",
+       "Explain the bias–variance trade-off using polynomial curve fitting."
+      ]
+     },
+     "weight": 1
+    }
+   ]
+  }
+ ]
+}

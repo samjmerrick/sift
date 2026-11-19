@@ -17,6 +17,7 @@ A self-hosted, infinitely scrolling feed of useful things to read and practise. 
 | Chord spelling | "Spell E♭m7", with correct enharmonic spelling, shown on a keyboard. |
 | Key signatures | Signatures, relative minors, circle of fifths. |
 | Ear training | Plays an interval through the phone speaker; name it. |
+| Sight reading | Notes on a treble, bass or grand staff to name: single notes or short passages, with key signatures, accidentals and ledger lines. Tap to check, then hear them played. No instrument needed. |
 
 Use only what you want. A feed with just news sources and no practice cards works fine, and so does the reverse.
 
@@ -24,17 +25,22 @@ Use only what you want. A feed with just news sources and no practice cards work
 
 A fresh install is **empty**. Open the app, go to **Settings → Topics** and either:
 
-- **Add a starter pack**: ready-made topics with sources and card types (AI, Programming, Science, Russian, Guitar, Piano). Add as many as you like, then edit or delete anything.
+- **Add a starter pack**: ready-made topics with sources and card types (AI, Programming, Science, Russian, Guitar, Piano, Sight reading, Machine learning, UK news & Reading, International development, Biometrics, Cute animals). Add as many as you like, then edit or delete anything.
 - **Add your own topic** and fill it in by hand.
 
 Everything is edited in the app under **Settings**, with no code changes or redeploys:
 
 | Tab | What you configure |
 |---|---|
-| Topics | Name, colour, share of the feed (weight), and how often a slot is an article rather than a practice card. |
+| Topics | Name, category (Music, News, Tech…), colour, and how often a slot is an article rather than a practice card. |
+| Balance | The share of the feed each topic gets, as percentages that always add up to 100%. Moving one slider moves the others in proportion; lock a topic to hold its share; category sliders scale a whole group. |
 | Sources | Where articles come from, with include/exclude keywords, a minimum score (Hacker News), a maximum age, and a weight. **Preview** shows what a source would give you before you save it. |
 | Card types | Which practice cards each topic gets, and their settings. |
 | Decks | Flashcard decks. Paste lines of `front, back, note`, then add a *Flashcards* card type that points at the deck. |
+
+### Choosing what you see
+
+The feed has quick chips (one per category, or per topic if you haven't set categories) and a **topic picker** (the filter button at the top right): search, tick any combination of topics, then apply. Your choice is remembered on that device.
 
 ### Tips for good sources
 
@@ -58,7 +64,7 @@ A pack is one JSON file in `public/starters/`. Add its filename to `public/start
     { "name": "Openings", "cards": [["e4 e5 Nf3 Nc6 Bc4", "Italian Game", "optional note"]] }
   ],
   "topics": [{
-    "name": "Chess", "color": "#7c3aed", "weight": 2, "curated_ratio": 0.5,
+    "name": "Chess", "category": "Games", "color": "#7c3aed", "weight": 2, "curated_ratio": 0.5,
     "sources": [
       { "kind": "rss", "name": "Some blog", "config": { "url": "https://example.com/feed", "max_age_days": 30 },
         "include": "", "exclude": "", "weight": 1 },
@@ -73,7 +79,7 @@ A pack is one JSON file in `public/starters/`. Add its filename to `public/start
 }
 ```
 
-Source kinds are `rss` and `hn`. Card kinds and their `config` keys are defined in `public/lib/generators.js` (`flashcards`, `prompts`, `guitar_chord`, `guitar_scale`, `fretboard_note`, `piano_chord`, `key_signature`, `ear_interval`). `npm test` validates every pack and installs each one into a real schema, so mistakes show up before you deploy.
+Source kinds are `rss` and `hn`. Give each topic a `category` so it is grouped in the feed's topic picker and the Balance tab. Card kinds and their `config` keys are defined in `public/lib/generators.js` (`flashcards`, `prompts`, `guitar_chord`, `guitar_scale`, `fretboard_note`, `piano_chord`, `key_signature`, `ear_interval`, `staff_notes`). `npm test` validates every pack and installs each one into a real schema, so mistakes show up before you deploy.
 
 A pack only adds topics and decks whose names don't exist yet, so installing one twice is harmless.
 
@@ -188,6 +194,7 @@ public/                       the app (vanilla JS, no build step)
   lib/feed.js                 ranking + building feed pages
   lib/generators.js           practice card kinds + spaced repetition
   lib/packs.js                validating and installing starter packs
+  lib/balance.js              share-balancing maths for Settings → Balance
   lib/theory.js               music theory (spelling, chords, scales, keys, chord shapes)
   lib/data.js                 all Supabase reads/writes
 supabase/migrations/          schema, owner-only row level security, feed_state(), hourly cron support

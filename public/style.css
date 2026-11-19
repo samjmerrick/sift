@@ -45,6 +45,9 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   padding: env(safe-area-inset-top) 0 0; border-bottom: 1px solid var(--line);
 }
 .topbar-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 16px 2px; max-width: 680px; margin: 0 auto; }
+.topbar-actions { display: flex; gap: 2px; }
+.icon-btn { position: relative; }
+.icon-btn[data-on]::after { content: ""; position: absolute; top: 7px; right: 7px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg); }
 .wordmark { font: 600 22px/1 var(--serif); letter-spacing: -.01em; margin: 0; }
 .icon-btn { border: 0; background: none; width: 40px; height: 40px; display: grid; place-items: center; border-radius: 10px; color: var(--ink-2); cursor: pointer; }
 .icon-btn:active { background: var(--surface-2); }
@@ -211,3 +214,35 @@ main { max-width: 680px; margin: 0 auto; padding: 12px 12px 24px; }
 .deck-cards { font-size: 14px; }
 .deck-cards .row { cursor: default; min-height: 0; padding: 8px 12px; }
 .row .desc.wrap { white-space: normal; }
+
+/* topic picker */
+.pick-quick { display: flex; gap: 8px; margin: 0 0 4px; }
+.pick-group { display: flex; align-items: baseline; gap: 8px; font-size: 13px; font-weight: 600; color: var(--ink-2); margin: 16px 4px 8px; text-transform: uppercase; letter-spacing: .05em; }
+.pick-group small { font-weight: 400; color: var(--ink-3); letter-spacing: 0; }
+.pick-group .link { margin-left: auto; }
+.link { border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; padding: 0; text-transform: none; letter-spacing: 0; }
+.row.pick { cursor: pointer; }
+.tick { appearance: none; -webkit-appearance: none; flex: none; width: 24px; height: 24px; margin: 0; border-radius: 50%; border: 1.5px solid var(--ink-3); display: grid; place-items: center; cursor: pointer; }
+.tick:checked { background: var(--accent); border-color: var(--accent); }
+.tick:checked::after { content: ""; width: 6px; height: 11px; border: solid var(--accent-ink); border-width: 0 2.2px 2.2px 0; transform: translateY(-1px) rotate(45deg); }
+.pick-foot { position: sticky; bottom: calc(-24px - env(safe-area-inset-bottom)); display: flex; margin: 16px -16px calc(-24px - env(safe-area-inset-bottom)); padding: 12px 16px calc(14px + env(safe-area-inset-bottom)); background: var(--bg); border-top: 1px solid var(--line); }
+.field input[type=search], .sheet-body input[type=search] { width: 100%; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 10px 12px; font-size: 16px; }
+
+/* balance */
+.stack { display: flex; height: 14px; border-radius: 999px; overflow: hidden; gap: 2px; margin: 4px 0 16px; background: var(--line); }
+.stack span { background: var(--c); min-width: 0; flex-basis: 0; transition: flex-grow .12s; }
+.bal-group { display: flex; align-items: center; gap: 10px; margin: 18px 4px 8px; font-size: 13px; font-weight: 600; color: var(--ink-2); text-transform: uppercase; letter-spacing: .05em; }
+.bal-group b { font-variant-numeric: tabular-nums; min-width: 3ch; }
+.bal-group input[type=range] { flex: 1; min-width: 0; }
+.bal-row { padding: 10px 14px 6px; border-top: 1px solid var(--line); }
+.bal-row:first-child { border-top: 0; }
+.bal-top { display: flex; align-items: center; gap: 10px; }
+.bal-top .title { font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bal-top .grow { flex: 1; }
+.pct { display: inline-flex; align-items: center; gap: 2px; color: var(--ink-3); font-size: 14px; }
+.pct input { width: 52px; border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 5px 6px; font-size: 15px; text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); }
+.act.lock { height: 32px; min-width: 32px; padding: 0; }
+.act.lock svg { width: 18px; height: 18px; }
+.act.lock[aria-pressed="true"] { color: var(--ink); background: var(--surface-2); }
+.bal-row input[type=range], .bal-group input[type=range] { width: 100%; accent-color: var(--accent); margin: 4px 0 2px; }
+.bal-row input[type=range]:disabled { opacity: .4; }

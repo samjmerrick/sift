@@ -1,0 +1,103 @@
+{
+ "name": "UK news & Reading",
+ "description": "National news from the BBC, Guardian and Sky, plus BBC Berkshire and local papers for Reading and the surrounding area.",
+ "topics": [
+  {
+   "name": "UK news",
+   "category": "News",
+   "color": "#334155",
+   "weight": 2.5,
+   "curated_ratio": 1,
+   "sources": [
+    {
+     "kind": "rss",
+     "name": "BBC News: UK",
+     "config": {
+      "url": "https://feeds.bbci.co.uk/news/uk/rss.xml",
+      "max_age_days": 2
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1.3
+    },
+    {
+     "kind": "rss",
+     "name": "BBC News: Politics",
+     "config": {
+      "url": "https://feeds.bbci.co.uk/news/politics/rss.xml",
+      "max_age_days": 2
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 0.9
+    },
+    {
+     "kind": "rss",
+     "name": "The Guardian: UK news",
+     "config": {
+      "url": "https://www.theguardian.com/uk-news/rss",
+      "max_age_days": 2
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1.1
+    },
+    {
+     "kind": "rss",
+     "name": "Sky News: UK",
+     "config": {
+      "url": "https://feeds.skynews.com/feeds/rss/uk.xml",
+      "max_age_days": 2
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 0.9
+    }
+   ],
+   "cards": []
+  },
+  {
+   "name": "Reading & Berkshire",
+   "category": "News",
+   "color": "#0284c7",
+   "weight": 2,
+   "curated_ratio": 1,
+   "sources": [
+    {
+     "kind": "rss",
+     "name": "BBC News: Berkshire",
+     "config": {
+      "url": "https://feeds.bbci.co.uk/news/england/berkshire/rss.xml",
+      "max_age_days": 7
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1.4
+    },
+    {
+     "kind": "rss",
+     "name": "Reading Chronicle",
+     "config": {
+      "url": "https://www.readingchronicle.co.uk/news/rss/",
+      "max_age_days": 7
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1.2
+    },
+    {
+     "kind": "rss",
+     "name": "Bracknell News",
+     "config": {
+      "url": "https://www.bracknellnews.co.uk/news/rss/",
+      "max_age_days": 7
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 0.6
+    }
+   ],
+   "cards": []
+  }
+ ]
+}
