@@ -157,16 +157,6 @@ function setFilter(ids) {
 function renderChips() {
   const enabled = enabledTopics();
   filter = new Set([...filter].filter((id) => enabled.some((t) => t.id === id)));
-  const groups = topicGroups(enabled);
-  const categorised = groups.some((g) => g.raw);
-  const chip = (label, ids, color) => h('button', {
-    class: 'chip', 'aria-pressed': String(sameSet(filter, new Set(ids))), onclick: () => setFilter(ids),
-  }, color ? h('span', { class: 'dot', style: { '--c': color } }) : null, label);
-  const quick = categorised ? groups.map((g) => chip(g.name, g.topics.map((t) => t.id))) : enabled.map((t) => chip(t.name, [t.id], t.color));
-  // A selection made in the picker that matches none of the chips gets a chip of its own.
-  const custom = filter.size && !quick.some((c) => c.getAttribute('aria-pressed') === 'true')
-    ? h('button', { class: 'chip', 'aria-pressed': 'true', onclick: openTopicPicker }, filter.size === 1 ? topicById([...filter][0]).name : `${filter.size} topics`) : null;
-  $('#chips').replaceChildren(chip('All', []), custom, ...quick);
   const btn = $('#topics-btn');
   btn.hidden = enabled.length < 2 || route().name === 'settings';
   if (filter.size) btn.dataset.on = ''; else delete btn.dataset.on;
@@ -204,7 +194,7 @@ function openTopicPicker() {
   };
   search.oninput = draw;
   apply.onclick = () => { if (draft.size) setFilter(draft.size === topics.length ? [] : [...draft]); closeSheet(); };
-  openSheet('Choose topics', h('div', {},
+  openSheet('Filter topics', h('div', {},
     topics.length > 8 ? h('div', { class: 'field' }, search) : null,
     h('div', { class: 'pick-quick' },
       h('button', { class: 'chip', onclick: () => { topics.forEach((t) => draft.add(t.id)); draw(); } }, 'Select all'),
@@ -929,7 +919,7 @@ function editTopic(t) {
   const total = active.reduce((a, x) => a + x.weight, 0) || 1;
   const share = t.id && t.enabled ? `${Math.round((t.weight / total) * 100)}% of your feed` : null;
   openSheet(t.id ? 'Edit topic' : 'New topic', h('div', {},
-    field('Name', name), field('Category', h('div', {}, category, options), 'Groups topics in the feed\'s topic picker and chips. Leave empty for none.'), field('Colour', color),
+    field('Name', name), field('Category', h('div', {}, category, options), 'Groups topics in the feed\'s topic filter. Leave empty for none.'), field('Colour', color),
     share ? h('div', { class: 'field' }, h('span', {}, 'Share of feed'), h('div', { class: 'sub' }, share, ' · ', h('button', { class: 'link', onclick: () => { location.hash = '#/settings/balance'; } }, 'change in Balance'))) : null,
     field(h('span', {}, 'Articles vs practice cards: ', rOut), ratio, 'Chance each slot is an article when unread articles exist; otherwise it is a practice card.'),
     h('div', { class: 'toolbar' },
@@ -1063,7 +1053,6 @@ function onRoute() {
   const r = route();
   if (r.name !== 'feed' && feed.el?.isConnected) feed.scrollY = scrollY;
   document.querySelectorAll('.tabbar a').forEach((a) => (a.dataset.tab === r.name ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
-  $('#chips').hidden = r.name === 'settings';
   renderChips();
   closeSheet();
   if (r.name === 'saved') renderSaved();

@@ -44,7 +44,7 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
   backdrop-filter: saturate(1.4) blur(12px); -webkit-backdrop-filter: saturate(1.4) blur(12px);
   padding: env(safe-area-inset-top) 0 0; border-bottom: 1px solid var(--line);
 }
-.topbar-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 16px 2px; max-width: 680px; margin: 0 auto; }
+.topbar-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; max-width: 680px; margin: 0 auto; }
 .topbar-actions { display: flex; gap: 2px; }
 .icon-btn { position: relative; }
 .icon-btn[data-on]::after { content: ""; position: absolute; top: 7px; right: 7px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg); }
@@ -143,7 +143,7 @@ main { max-width: 680px; margin: 0 auto; padding: 12px 12px 24px; }
 @keyframes shimmer { to { background-position: -200% 0; } }
 
 /* ---------- settings ---------- */
-.seg { display: flex; background: var(--surface-2); border-radius: 11px; padding: 3px; margin-bottom: 14px; position: sticky; top: calc(env(safe-area-inset-top) + 92px); z-index: 5; }
+.seg { display: flex; background: var(--surface-2); border-radius: 11px; padding: 3px; margin-bottom: 14px; position: sticky; top: calc(env(safe-area-inset-top) + 52px); z-index: 5; }
 .seg button { flex: 1; border: 0; background: none; padding: 7px 4px; border-radius: 9px; font-size: 14px; cursor: pointer; color: var(--ink-2); }
 .seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: var(--shadow); font-weight: 600; }
 .section-h { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; color: var(--ink-2); margin: 18px 4px 8px; text-transform: uppercase; letter-spacing: .05em; }

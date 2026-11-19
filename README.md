@@ -40,7 +40,7 @@ Everything is edited in the app under **Settings**, with no code changes or rede
 
 ### Choosing what you see
 
-The feed has quick chips (one per category, or per topic if you haven't set categories) and a **topic picker** (the filter button at the top right): search, tick any combination of topics, then apply. Your choice is remembered on that device.
+The feed has a **topic filter** (the button at the top right): search, tick any combination of topics, then apply. Your choice is remembered on that device.
 
 ### Tips for good sources
 
