@@ -19,6 +19,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(`FAILED: ${msg}`); co
   const feedUrl = `http://127.0.0.1:${feedServer.address().port}/feed.xml`;
 
   // Sample articles (live feeds aren't needed for the UI test).
+  const addSamples = async () => {
   await sql`delete from items where url like 'https://sample.test/%'`;
   const samples = [
     ['Simon Willison', 'Notes on prompt caching for long agent sessions', 'A short description from the feed itself appears here, clamped to a few lines so cards stay bite-sized.', null, 3],
@@ -31,6 +32,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(`FAILED: ${msg}`); co
       select id, topic_id, ${`https://sample.test/${i}`}, ${`[Sample] ${title}`}, ${title.toLowerCase()}, ${summary}, 'sample.test', ${score},
              now() - ${`${hrs} hours`}::interval from sources where name = ${source}`;
   }
+  };
 
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ ...devices['iPhone 13'], deviceScaleFactor: OUT ? 2 : 1 });
@@ -47,8 +49,26 @@ const assert = (cond, msg) => { if (!cond) throw new Error(`FAILED: ${msg}`); co
   await p.fill('input[type=email]', 'me@example.com');
   await p.fill('input[type=password]', 'pw');
   await p.click('button[type=submit]');
+  await p.waitForSelector('.empty h3:has-text("Welcome")');
+  assert(true, 'a fresh install has an empty feed that points at setup');
+  await shot('welcome');
+  await p.click('.empty button:has-text("Set up topics")');
+  await p.waitForSelector('text=+ Add starter pack');
+  await p.click('text=+ Add starter pack');
+  await p.waitForSelector('.sheet .row:has-text("Russian")');
+  await p.waitForTimeout(500); await shot('packs');
+  for (const name of ['AI & machine learning', 'Russian', 'Guitar', 'Piano & music theory']) {
+    await p.click(`.sheet .row:has-text("${name}") button`);
+    await p.waitForSelector(`.sheet .row:has-text("${name}") button:has-text("Added")`);
+  }
+  const [counts] = await sql`select (select count(*) from topics)::int t, (select count(*) from cards)::int c, (select count(*) from generators)::int g`;
+  assert(counts.t === 4 && counts.c === 90 && counts.g === 9, `starter packs install topics, deck and card types (${JSON.stringify(counts)})`);
+  await p.click('.sheet-head [data-close]');
+  await addSamples();
+  await p.click('a[data-tab=feed]');
+  await p.click('#refresh');
   await p.waitForSelector('.card');
-  assert(true, 'sign in loads the feed');
+  assert(true, 'the feed fills once topics exist');
   await p.waitForTimeout(400);
   await shot('feed');
 

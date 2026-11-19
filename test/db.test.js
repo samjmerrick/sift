@@ -5,13 +5,10 @@ import { freshDb, asUser } from './db.js';
 const sql = await freshDb();
 after(() => sql.end());
 
-test('seed data is present', async () => {
+test('a fresh install has no personal content', async () => {
   const [r] = await sql`select (select count(*) from topics)::int t, (select count(*) from sources)::int s,
-    (select count(*) from cards)::int c, (select count(*) from generators)::int g`;
-  assert.deepEqual(r, { t: 4, s: 21, c: 90, g: 9 });
-  const [fc] = await sql`select config from generators where kind = 'flashcards'`;
-  const [deck] = await sql`select id from decks`;
-  assert.equal(Number(fc.config.deck_id), Number(deck.id));
+    (select count(*) from cards)::int c, (select count(*) from generators)::int g, (select count(*) from decks)::int d`;
+  assert.deepEqual(r, { t: 0, s: 0, c: 0, g: 0, d: 0 });
 });
 
 test('anonymous role cannot read or write anything', async () => {
@@ -41,10 +38,12 @@ test('owner can use tables, views and feed_state', async () => {
     await tx`insert into cards (deck_id, front, back) values (${deck.id}, 'a', 'b')`;
     const [stats] = await tx`select * from deck_stats where id = ${deck.id}`;
     assert.equal(Number(stats.cards), 1);
+    const [topic] = await tx`insert into topics (name) values ('T') returning id`;
+    await tx`insert into sources (topic_id, kind, name, config) values (${topic.id}, 'rss', 'S', '{"url":"https://example.com/feed"}')`;
     const [{ feed_state: state }] = await tx`select feed_state()`;
-    assert.equal(state.topics.length, 4);
+    assert.equal(state.topics.length, 1);
     assert.ok(state.decks[deck.id].new.length === 1);
     const sources = await tx`select * from source_stats`;
-    assert.equal(sources.length, 21);
+    assert.equal(sources.length, 1);
   });
 });

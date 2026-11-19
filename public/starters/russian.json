@@ -1,0 +1,504 @@
+{
+ "name": "Russian",
+ "description": "YouTube lessons plus a 90-word starter deck with stress marks, as spaced-repetition flashcards.",
+ "topics": [
+  {
+   "name": "Russian",
+   "color": "#dc2626",
+   "weight": 2.5,
+   "curated_ratio": 0.3,
+   "sources": [
+    {
+     "kind": "rss",
+     "name": "Russian With Max",
+     "config": {
+      "url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCklUqFEcJqFnWKEBozw5p4g",
+      "max_age_days": 30
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1.2
+    },
+    {
+     "kind": "rss",
+     "name": "Real Russian Club",
+     "config": {
+      "url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCyJznKYS9kkP7RWWq3YAbFw",
+      "max_age_days": 30
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1
+    }
+   ],
+   "cards": [
+    {
+     "kind": "flashcards",
+     "name": "Russian vocabulary",
+     "config": {
+      "new_per_day": 10,
+      "deck": "Russian core vocabulary"
+     },
+     "weight": 3
+    }
+   ]
+  }
+ ],
+ "decks": [
+  {
+   "name": "Russian core vocabulary",
+   "cards": [
+    [
+     "и",
+     "and",
+     "Я и ты. — Me and you."
+    ],
+    [
+     "в",
+     "in, at; into",
+     "Я в Москве́. — I'm in Moscow."
+    ],
+    [
+     "не",
+     "not",
+     "Я не зна́ю. — I don't know."
+    ],
+    [
+     "на",
+     "on, at; onto",
+     "Кни́га на столе́. — The book is on the table."
+    ],
+    [
+     "что",
+     "what; that",
+     "Что э́то? — What is this?"
+    ],
+    [
+     "быть",
+     "to be",
+     "Я хочу́ быть врачо́м. — I want to be a doctor."
+    ],
+    [
+     "с",
+     "with",
+     "чай с молоко́м — tea with milk"
+    ],
+    [
+     "э́тот / э́та / э́то",
+     "this",
+     "э́тот дом — this house"
+    ],
+    [
+     "как",
+     "how; as, like",
+     "Как дела́? — How are things?"
+    ],
+    [
+     "к",
+     "towards, to (a person)",
+     "Я иду́ к дру́гу. — I'm going to my friend's."
+    ],
+    [
+     "сказа́ть (pf.)",
+     "to say, to tell",
+     "Что ты сказа́л? — What did you say?"
+    ],
+    [
+     "мочь",
+     "to be able, can",
+     "Я могу́ помо́чь. — I can help."
+    ],
+    [
+     "по",
+     "along; by, via",
+     "по телефо́ну — by phone"
+    ],
+    [
+     "но",
+     "but",
+     "Я хочу́, но не могу́. — I want to, but I can't."
+    ],
+    [
+     "год (m)",
+     "year",
+     "в э́том году́ — this year"
+    ],
+    [
+     "челове́к (m)",
+     "person",
+     "Он хоро́ший челове́к. — He's a good person."
+    ],
+    [
+     "о / об",
+     "about",
+     "Мы говори́ли о кни́ге. — We talked about the book."
+    ],
+    [
+     "ещё",
+     "still; more; yet",
+     "Ещё раз! — Once more!"
+    ],
+    [
+     "ну́жно",
+     "(it is) necessary",
+     "Мне ну́жно идти́. — I need to go."
+    ],
+    [
+     "знать",
+     "to know",
+     "Я не зна́ю. — I don't know."
+    ],
+    [
+     "уже́",
+     "already",
+     "Я уже́ по́ел. — I've already eaten."
+    ],
+    [
+     "тако́й",
+     "such, so",
+     "Он тако́й смешно́й! — He's so funny!"
+    ],
+    [
+     "говори́ть (impf.)",
+     "to speak, to talk",
+     "Вы говори́те по-англи́йски? — Do you speak English?"
+    ],
+    [
+     "хоте́ть",
+     "to want",
+     "Я хочу́ ко́фе. — I want coffee."
+    ],
+    [
+     "вре́мя (n)",
+     "time",
+     "У меня́ нет вре́мени. — I don't have time."
+    ],
+    [
+     "де́ло (n)",
+     "matter, affair, business",
+     "Как дела́? — How are you doing?"
+    ],
+    [
+     "рука́ (f)",
+     "hand, arm",
+     "пра́вая рука́ — right hand"
+    ],
+    [
+     "день (m)",
+     "day",
+     "Хоро́шего дня! — Have a nice day!"
+    ],
+    [
+     "жизнь (f)",
+     "life",
+     "Така́я жизнь. — That's life."
+    ],
+    [
+     "ви́деть",
+     "to see",
+     "Я тебя́ ви́жу. — I see you."
+    ],
+    [
+     "сейча́с",
+     "now, right now",
+     "Я сейча́с приду́. — I'll be right there."
+    ],
+    [
+     "сло́во (n)",
+     "word",
+     "Что зна́чит э́то сло́во? — What does this word mean?"
+    ],
+    [
+     "ме́сто (n)",
+     "place, seat",
+     "Э́то ме́сто свобо́дно? — Is this seat free?"
+    ],
+    [
+     "друг (m)",
+     "friend",
+     "мой лу́чший друг — my best friend"
+    ],
+    [
+     "вопро́с (m)",
+     "question",
+     "У меня́ вопро́с. — I have a question."
+    ],
+    [
+     "дом (m)",
+     "house, home",
+     "Я до́ма. — I'm at home."
+    ],
+    [
+     "страна́ (f)",
+     "country",
+     "В како́й стране́ ты живёшь? — Which country do you live in?"
+    ],
+    [
+     "мир (m)",
+     "world; peace",
+     "во всём ми́ре — in the whole world"
+    ],
+    [
+     "слу́чай (m)",
+     "case, occasion",
+     "на вся́кий слу́чай — just in case"
+    ],
+    [
+     "ребёнок (m)",
+     "child (pl. де́ти)",
+     "У них дво́е дете́й. — They have two children."
+    ],
+    [
+     "голова́ (f)",
+     "head",
+     "У меня́ боли́т голова́. — I have a headache."
+    ],
+    [
+     "рабо́та (f)",
+     "work, job",
+     "Я на рабо́те. — I'm at work."
+    ],
+    [
+     "хорошо́",
+     "well, good, OK",
+     "Всё хорошо́. — Everything's fine."
+    ],
+    [
+     "ду́мать",
+     "to think",
+     "Я ду́маю, что ты прав. — I think you're right."
+    ],
+    [
+     "идти́",
+     "to go (on foot, one direction)",
+     "Я иду́ домо́й. — I'm going home."
+    ],
+    [
+     "е́хать",
+     "to go (by transport, one direction)",
+     "Мы е́дем в Петербу́рг. — We're going to Petersburg."
+    ],
+    [
+     "понима́ть",
+     "to understand",
+     "Я не понима́ю. — I don't understand."
+    ],
+    [
+     "спаси́бо",
+     "thank you",
+     "Спаси́бо большо́е! — Thanks a lot!"
+    ],
+    [
+     "пожа́луйста",
+     "please; you're welcome",
+     "Да, пожа́луйста. — Yes, please."
+    ],
+    [
+     "здра́вствуйте",
+     "hello (formal)",
+     "Здра́вствуйте, Анна Петро́вна! — Hello, Anna Petrovna!"
+    ],
+    [
+     "приве́т",
+     "hi",
+     "Приве́т, как дела́? — Hi, how are you?"
+    ],
+    [
+     "извини́те",
+     "excuse me, sorry (formal)",
+     "Извини́те, где метро́? — Excuse me, where's the metro?"
+    ],
+    [
+     "сего́дня",
+     "today (г sounds like в)",
+     "Сего́дня хо́лодно. — It's cold today."
+    ],
+    [
+     "за́втра",
+     "tomorrow",
+     "До за́втра! — See you tomorrow!"
+    ],
+    [
+     "вчера́",
+     "yesterday",
+     "Вчера́ был дождь. — It rained yesterday."
+    ],
+    [
+     "всегда́",
+     "always",
+     "Он всегда́ опа́здывает. — He's always late."
+    ],
+    [
+     "никогда́",
+     "never",
+     "Я никогда́ не был в Росси́и. — I've never been to Russia."
+    ],
+    [
+     "мно́го",
+     "much, many, a lot",
+     "мно́го рабо́ты — a lot of work"
+    ],
+    [
+     "ма́ло",
+     "little, few",
+     "ма́ло вре́мени — little time"
+    ],
+    [
+     "большо́й",
+     "big",
+     "большо́й го́род — a big city"
+    ],
+    [
+     "ма́ленький",
+     "small",
+     "ма́ленькая ко́мната — a small room"
+    ],
+    [
+     "но́вый",
+     "new",
+     "Э́то но́вая маши́на? — Is that a new car?"
+    ],
+    [
+     "ста́рый",
+     "old",
+     "ста́рый друг — an old friend"
+    ],
+    [
+     "краси́вый",
+     "beautiful",
+     "краси́вая му́зыка — beautiful music"
+    ],
+    [
+     "люби́ть",
+     "to love, to like",
+     "Я люблю́ му́зыку. — I love music."
+    ],
+    [
+     "чита́ть",
+     "to read",
+     "Я чита́ю кни́гу. — I'm reading a book."
+    ],
+    [
+     "писа́ть",
+     "to write",
+     "Напиши́ мне! — Write to me!"
+    ],
+    [
+     "игра́ть",
+     "to play",
+     "Я игра́ю на гита́ре. — I play the guitar. (на + instrument in prepositional)"
+    ],
+    [
+     "слу́шать",
+     "to listen (to)",
+     "Я слу́шаю му́зыку. — I'm listening to music."
+    ],
+    [
+     "учи́ть",
+     "to learn (sth); to teach",
+     "Я учу́ ру́сский язы́к. — I'm learning Russian."
+    ],
+    [
+     "язы́к (m)",
+     "language; tongue",
+     "родно́й язы́к — native language"
+    ],
+    [
+     "по-ру́сски",
+     "in Russian",
+     "Я немно́го говорю́ по-ру́сски. — I speak a little Russian."
+    ],
+    [
+     "почему́",
+     "why",
+     "Почему́ ты молчи́шь? — Why are you silent?"
+    ],
+    [
+     "где",
+     "where (location)",
+     "Где ты? — Where are you?"
+    ],
+    [
+     "куда́",
+     "where (to)",
+     "Куда́ ты идёшь? — Where are you going?"
+    ],
+    [
+     "когда́",
+     "when",
+     "Когда́ ты придёшь? — When will you come?"
+    ],
+    [
+     "ско́лько",
+     "how much, how many",
+     "Ско́лько сто́ит? — How much does it cost?"
+    ],
+    [
+     "мо́жно",
+     "may, it's allowed",
+     "Мо́жно войти́? — May I come in?"
+    ],
+    [
+     "нельзя́",
+     "not allowed; impossible",
+     "Здесь нельзя́ кури́ть. — No smoking here."
+    ],
+    [
+     "пото́м",
+     "then, later",
+     "Снача́ла рабо́та, пото́м о́тдых. — Work first, then rest."
+    ],
+    [
+     "то́же",
+     "also, too",
+     "Я то́же. — Me too."
+    ],
+    [
+     "о́чень",
+     "very",
+     "о́чень хорошо́ — very good"
+    ],
+    [
+     "пра́вда (f)",
+     "truth; really?",
+     "Пра́вда? — Really?"
+    ],
+    [
+     "сло́жно",
+     "(it's) difficult",
+     "Э́то не так сло́жно. — It's not that hard."
+    ],
+    [
+     "легко́",
+     "(it's) easy",
+     "Э́то легко́! — That's easy!"
+    ],
+    [
+     "вода́ (f)",
+     "water",
+     "стака́н воды́ — a glass of water"
+    ],
+    [
+     "есть",
+     "to eat; there is",
+     "Я хочу́ есть. — I'm hungry."
+    ],
+    [
+     "сло́во в сло́во",
+     "word for word",
+     "Повтори́ сло́во в сло́во. — Repeat word for word."
+    ],
+    [
+     "му́зыка (f)",
+     "music",
+     "класси́ческая му́зыка — classical music"
+    ],
+    [
+     "пиани́но (n, indecl.)",
+     "piano (upright)",
+     "Я игра́ю на пиани́но. — I play the piano."
+    ]
+   ]
+  }
+ ]
+}

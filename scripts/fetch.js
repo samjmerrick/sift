@@ -1,5 +1,5 @@
-// Fetch all enabled sources into the database. Run hourly by .github/workflows/fetch.yml.
-// Needs DATABASE_URL: the Supabase *Session pooler* connection string (Project → Connect).
+// Fetch all enabled sources into the database once, from your own machine (the deployed app does this hourly
+// inside Supabase). Needs DATABASE_URL: the Supabase *Session pooler* connection string (Project → Connect).
 import postgres from 'postgres';
 import { fetchAll } from '../supabase/functions/_shared/store.js';
 

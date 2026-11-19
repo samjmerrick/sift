@@ -3,6 +3,7 @@ import { createData } from './lib/data.js';
 import { buildFeed, generateOne } from './lib/feed.js';
 import { GENERATOR_KINDS, scheduleReview, applyReviewToDeck } from './lib/generators.js';
 import { SOURCE_KINDS } from './lib/source-kinds.js';
+import { installPack } from './lib/packs.js';
 
 // ---------- utilities ----------
 const $ = (sel, el = document) => el.querySelector(sel);
@@ -205,8 +206,13 @@ async function loadMore(first = false) {
     if (!cards.length) {
       feed.done = true;
       if (!list.children.length) {
-        list.replaceChildren(h('div', { class: 'empty' }, h('h3', {}, 'Nothing here yet'),
-          h('p', {}, 'Sources are fetched every hour. Add sources or card types in Settings, or use "Fetch all now" there.')));
+        const fresh = !meta.topics.length;
+        list.replaceChildren(h('div', { class: 'empty' },
+          h('h3', {}, fresh ? 'Welcome to Sift' : 'Nothing here yet'),
+          h('p', {}, fresh
+            ? 'Your feed is empty because you have no topics yet. Add a starter pack, or create your own topic in Settings.'
+            : 'Sources are fetched every hour. Add sources or card types in Settings, or use "Fetch all now" there.'),
+          fresh ? h('button', { class: 'btn primary', onclick: () => { location.hash = '#/settings/topics'; } }, 'Set up topics') : null));
       } else feed.status.textContent = "You're all caught up.";
     }
   } catch (e) {
@@ -520,7 +526,7 @@ const SETTINGS = {
     const topics = await data.topics();
     const total = topics.filter((t) => t.enabled).reduce((s, t) => s + t.weight, 0) || 1;
     body.append(
-      h('p', { class: 'intro' }, 'Topics are the channels in your feed. Weight controls how much of the feed each one gets.'),
+      h('p', { class: 'intro' }, topics.length ? 'Topics are the channels in your feed. Weight controls how much of the feed each one gets.' : 'Topics are the channels in your feed. Start from a starter pack or add your own.'),
       h('div', { class: 'list' },
         topics.map((t) => rowEl({
           dot: t.color, title: t.name,
@@ -528,7 +534,8 @@ const SETTINGS = {
           right: toggle(t.enabled, async (v) => { await data.update('topics', t.id, { enabled: v }).catch(fail); rerender(); }),
           onclick: () => editTopic(t),
         })),
-        rowEl({ title: h('span', { class: 'add-row' }, '+ Add topic'), onclick: () => editTopic(null) })),
+        rowEl({ title: h('span', { class: 'add-row' }, '+ Add topic'), onclick: () => editTopic(null) }),
+        rowEl({ title: h('span', { class: 'add-row' }, '+ Add starter pack'), desc: 'Ready-made topics with sources and card types', onclick: openPackPicker })),
     );
   },
   async sources(body) {
@@ -660,6 +667,35 @@ async function deleteRow(table, row, what) {
   if (!confirm(`Delete ${what}?`)) return;
   try { await data.remove(table, row.id); } catch (e) { return fail(e); }
   closeSheet(); toast('Deleted'); rerender();
+}
+
+async function openPackPicker() {
+  const body = h('div', {}, h('p', { class: 'intro' }, 'Loading…'));
+  openSheet('Starter packs', body);
+  try {
+    const files = await (await fetch('starters/index.json', { cache: 'no-cache' })).json();
+    const packs = await Promise.all(files.map(async (f) => (await fetch(`starters/${f}`, { cache: 'no-cache' })).json()));
+    const have = new Set(meta.topics.map((t) => t.name));
+    body.replaceChildren(
+      h('p', { class: 'intro' }, 'Each pack adds topics with sources and card types. Everything can be edited or deleted afterwards. Packs only add what is missing, so adding one twice is harmless.'),
+      h('div', { class: 'list' }, packs.map((pack) => {
+        const done = pack.topics.every((t) => have.has(t.name));
+        const sources = pack.topics.reduce((n, t) => n + (t.sources?.length || 0), 0);
+        const btn = h('button', { class: 'btn', disabled: done, onclick: async () => {
+          btn.disabled = true; btn.textContent = 'Adding…';
+          try {
+            const r = await installPack(data, pack);
+            toast(`Added ${r.topics} topic${r.topics === 1 ? '' : 's'}, ${r.sources} sources`);
+            // Pull in the first articles now rather than waiting for the hourly fetch.
+            data.fetcher('fetch_all').then(() => { feed.dirty = true; }).catch(() => {});
+            btn.textContent = 'Added';
+            rerender(); // the sheet stays open so several packs can be added in one go
+          } catch (e) { fail(e); btn.disabled = false; btn.textContent = 'Add'; }
+        } }, done ? 'Added' : 'Add');
+        return h('div', { class: 'row' }, h('div', { class: 'grow' }, h('div', { class: 'title' }, pack.name),
+          h('div', { class: 'desc wrap' }, `${pack.description || ''} (${sources} sources)`)), btn);
+      })));
+  } catch (e) { body.replaceChildren(h('p', { class: 'intro' }, `Couldn't load starter packs: ${e.message}`)); }
 }
 
 function editTopic(t) {

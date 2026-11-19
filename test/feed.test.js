@@ -4,7 +4,7 @@ import { buildFeed, normaliseState, generateOne } from '../public/lib/feed.js';
 import { GENERATOR_KINDS, scheduleReview, applyReviewToDeck } from '../public/lib/generators.js';
 import { freshDb, asUser } from './db.js';
 
-const sql = await freshDb();
+const sql = await freshDb({ packs: ['ai', 'russian', 'guitar', 'piano'] });
 after(() => sql.end());
 const loadState = () => asUser(sql, async (tx) => normaliseState((await tx`select feed_state() s`)[0].s));
 

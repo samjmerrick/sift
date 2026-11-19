@@ -1,0 +1,90 @@
+{
+ "name": "AI & machine learning",
+ "description": "Hacker News, Lobsters and a handful of well-regarded newsletters and blogs.",
+ "topics": [
+  {
+   "name": "AI",
+   "color": "#7c3aed",
+   "weight": 4,
+   "curated_ratio": 0.9,
+   "sources": [
+    {
+     "kind": "hn",
+     "name": "Hacker News: AI",
+     "config": {
+      "min_points": 150,
+      "days": 3
+     },
+     "include": "AI, LLM, LLMs, GPT, Claude, Gemini, Llama, model, models, neural, transformer, agents, agent, inference, OpenAI, Anthropic, DeepMind, diffusion, embedding, embeddings, fine-tuning, RAG",
+     "exclude": "",
+     "weight": 1
+    },
+    {
+     "kind": "rss",
+     "name": "Simon Willison",
+     "config": {
+      "url": "https://simonwillison.net/atom/everything/"
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1.2
+    },
+    {
+     "kind": "rss",
+     "name": "Hugging Face blog",
+     "config": {
+      "url": "https://huggingface.co/blog/feed.xml"
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1
+    },
+    {
+     "kind": "rss",
+     "name": "Lobsters: AI",
+     "config": {
+      "url": "https://lobste.rs/t/ai.rss",
+      "max_age_days": 7
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1
+    },
+    {
+     "kind": "rss",
+     "name": "Ahead of AI (Sebastian Raschka)",
+     "config": {
+      "url": "https://magazine.sebastianraschka.com/feed",
+      "max_age_days": 30
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1.2
+    },
+    {
+     "kind": "rss",
+     "name": "Interconnects (Nathan Lambert)",
+     "config": {
+      "url": "https://www.interconnects.ai/feed",
+      "max_age_days": 30
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1
+    },
+    {
+     "kind": "rss",
+     "name": "Latent Space",
+     "config": {
+      "url": "https://www.latent.space/feed",
+      "max_age_days": 30
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 0.9
+    }
+   ],
+   "cards": []
+  }
+ ]
+}

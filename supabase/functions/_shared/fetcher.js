@@ -2,7 +2,7 @@
 // Runtime-agnostic (Node 20+ and Deno): uses only fetch, TextDecoder and fast-xml-parser.
 import { XMLParser } from 'fast-xml-parser';
 
-const UA = 'Sift/0.1 (personal feed reader)';
+const UA = 'Sift/0.1 (self-hosted feed reader)';
 const DAY = 86400000;
 
 // ---------- text helpers ----------

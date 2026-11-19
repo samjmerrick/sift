@@ -1,7 +1,8 @@
 # Test, then publish the app to GitHub Pages.
-# Optional: also deploy database migrations + the Edge Function with the Supabase CLI — set repo variable
-# SUPABASE_PROJECT_REF and secrets SUPABASE_ACCESS_TOKEN, SUPABASE_DB_PASSWORD. (Without them, apply changes
-# from the Supabase dashboard / MCP instead; the app reads its Supabase config from public/config.js.)
+# Required repository variables: SUPABASE_URL and SUPABASE_ANON_KEY (public values; written to public/config.js).
+# Optional: also deploy database migrations + the Edge Function with the Supabase CLI. Set the repository variable
+# SUPABASE_PROJECT_REF and the secrets SUPABASE_ACCESS_TOKEN and SUPABASE_DB_PASSWORD. Without them, apply
+# migrations and deploy the function yourself (see the README).
 name: Deploy
 
 on:
@@ -71,12 +72,15 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - name: Override config.js from repo variables (optional; only when both are set)
-        if: ${{ vars.SUPABASE_URL != '' && vars.SUPABASE_ANON_KEY != '' }}
+      - name: Write public/config.js from repository variables
         env:
           SUPABASE_URL: ${{ vars.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ vars.SUPABASE_ANON_KEY }}
         run: |
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_ANON_KEY" ]; then
+            echo "::error::Set the repository variables SUPABASE_URL and SUPABASE_ANON_KEY (Settings > Secrets and variables > Actions > Variables). See the README, step 4."
+            exit 1
+          fi
           node -e '
             const cfg = { supabaseUrl: process.env.SUPABASE_URL, supabaseKey: process.env.SUPABASE_ANON_KEY };
             require("fs").writeFileSync("public/config.js", "window.SIFT_CONFIG = " + JSON.stringify(cfg) + ";\n");

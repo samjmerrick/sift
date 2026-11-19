@@ -74,6 +74,10 @@ export function createData(client) {
     async importCards(deckId, csv) {
       const rows = parseCsv(csv);
       if (!rows.length) throw new Error('No rows found. Use: front, back, note (comma or tab separated), one card per line.');
+      return this.addCards(deckId, rows);
+    },
+    /** Append [front, back, note?] rows to a deck. */
+    async addCards(deckId, rows) {
       const last = check(await client.from('cards').select('position').eq('deck_id', deckId).order('position', { ascending: false }).limit(1));
       const start = last[0]?.position ?? 0;
       const cards = rows.map(([front, back, note = ''], i) => ({ deck_id: deckId, front, back, note, position: start + i + 1 }));

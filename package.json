@@ -1,12 +1,11 @@
 {
   "name": "sift",
   "version": "0.1.0",
-  "description": "A personal, LLM-free, infinitely scrolling feed of useful things to read and practise. Supabase + GitHub Pages + Actions.",
+  "description": "A self-hosted, LLM-free, infinitely scrolling feed of articles and practice cards you configure. Supabase + GitHub Pages.",
   "type": "module",
   "scripts": {
     "dev": "node scripts/dev.js",
     "fetch": "node scripts/fetch.js",
-    "build:seed": "node scripts/build-seed.js",
     "test": "node --test --test-concurrency=1 test/*.test.js"
   },
   "engines": {

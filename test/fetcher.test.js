@@ -22,7 +22,7 @@ before(async () => {
   });
   await new Promise((r) => server.listen(0, r));
   base = `http://127.0.0.1:${server.address().port}`;
-  sql = await freshDb();
+  sql = await freshDb({ packs: ['ai', 'russian'] });
 });
 after(async () => { server.close(); await sql.end(); });
 

@@ -1,0 +1,137 @@
+{
+ "name": "Piano & music theory",
+ "description": "Piano and theory channels, with chord spelling, key signatures, ear training and practice prompts.",
+ "topics": [
+  {
+   "name": "Piano",
+   "color": "#0891b2",
+   "weight": 1.5,
+   "curated_ratio": 0.4,
+   "sources": [
+    {
+     "kind": "rss",
+     "name": "Nahre Sol",
+     "config": {
+      "url": "https://www.youtube.com/feeds/videos.xml?channel_id=UC8R8FRt1KcPiR-rtAflXmeg",
+      "max_age_days": 60
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1.2
+    },
+    {
+     "kind": "rss",
+     "name": "Josh Wright",
+     "config": {
+      "url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCp4DtLatjb5dBNHHYcvVXCw",
+      "max_age_days": 30
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1
+    },
+    {
+     "kind": "rss",
+     "name": "Adam Neely (music theory)",
+     "config": {
+      "url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCnkp4xDOwqqJD7sSM3xdUiQ",
+      "max_age_days": 60
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 0.9
+    },
+    {
+     "kind": "rss",
+     "name": "PianoTV",
+     "config": {
+      "url": "https://www.pianotv.net/feed/",
+      "max_age_days": 60
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1.2
+    },
+    {
+     "kind": "rss",
+     "name": "Musicnotes blog",
+     "config": {
+      "url": "https://www.musicnotes.com/blog/feed/",
+      "max_age_days": 30
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 0.9
+    },
+    {
+     "kind": "rss",
+     "name": "Ethan Hein (music theory)",
+     "config": {
+      "url": "https://www.ethanhein.com/wp/feed/",
+      "max_age_days": 60
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1
+    }
+   ],
+   "cards": [
+    {
+     "kind": "piano_chord",
+     "name": "Chord spelling",
+     "config": {
+      "qualities": "maj,min,dim,aug,maj7,min7,dom7,m7b5"
+     },
+     "weight": 2
+    },
+    {
+     "kind": "key_signature",
+     "name": "Key signatures",
+     "config": {
+      "include_minor": true
+     },
+     "weight": 1
+    },
+    {
+     "kind": "ear_interval",
+     "name": "Ear training: intervals",
+     "config": {
+      "intervals": "m2,M2,m3,M3,P4,TT,P5,m6,M6,m7,M7,P8",
+      "direction": "both"
+     },
+     "weight": 1.5
+    },
+    {
+     "kind": "prompts",
+     "name": "Practice prompts",
+     "config": {
+      "label": "Practice",
+      "lines": [
+       "Play the C major scale hands together, 2 octaves, with correct fingering (thumb under on F in the right hand).",
+       "Sight-read 8 bars of something you've never played. Don't stop for mistakes.",
+       "Play a I–IV–V–I cadence in three different keys.",
+       "Practise chord inversions of C major in the right hand: root, 1st, 2nd, and back.",
+       "Play a piece with your left hand alone for 3 minutes — it's usually the weaker one.",
+       "Practise staccato vs. legato on the same 5-finger pattern.",
+       "Play a scale with a metronome on beats 2 and 4 only.",
+       "Improvise a melody over a left-hand C–Am–F–G progression for 3 minutes.",
+       "Practise arpeggios of A minor, 2 octaves, hands separately.",
+       "Play one phrase from a piece five times, each with a different dynamic shape.",
+       "Play the circle of fifths: one major chord per key, all 12 keys.",
+       "Practise a passage with dotted rhythms to even out a tricky run.",
+       "Slow practice: play your hardest passage at half speed with perfect evenness.",
+       "Pedal practice: change the sustain pedal just after each chord change (legato pedalling).",
+       "Play a 7th chord in every inversion: Cmaj7, then D minor 7.",
+       "Close your eyes and find middle C, then G, E, and B♭ by touch.",
+       "Practise a contrary-motion scale starting both thumbs on C.",
+       "Play a simple melody and harmonise it with root-position triads.",
+       "Spend 5 minutes on a Hanon or Czerny exercise, focusing on finger independence.",
+       "Record a piece, then listen back while following the score."
+      ]
+     },
+     "weight": 1
+    }
+   ]
+  }
+ ]
+}

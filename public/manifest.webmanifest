@@ -1,7 +1,7 @@
 {
   "name": "Sift",
   "short_name": "Sift",
-  "description": "A personal feed of useful things to read and practise.",
+  "description": "A self-hosted feed of useful things to read and practise.",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
