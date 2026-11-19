@@ -1,0 +1,115 @@
+{
+ "name": "Cute animals",
+ "description": "Rescue stories, zoo babies and cat videos. Pure comfort viewing; no keyword filters needed.",
+ "topics": [
+  {
+   "name": "Cute animals",
+   "category": "Fun",
+   "color": "#ec4899",
+   "weight": 1.2,
+   "curated_ratio": 1,
+   "sources": [
+    {
+     "kind": "rss",
+     "name": "The Dodo",
+     "config": {
+      "url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCINb0wqPz-A0dV9nARjJlOQ",
+      "max_age_days": 21
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1.3
+    },
+    {
+     "kind": "rss",
+     "name": "Cuteness",
+     "config": {
+      "url": "https://www.cuteness.com/feed",
+      "max_age_days": 14
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1.1
+    },
+    {
+     "kind": "rss",
+     "name": "Love Meow",
+     "config": {
+      "url": "https://www.lovemeow.com/feed",
+      "max_age_days": 14
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 1.1
+    },
+    {
+     "kind": "rss",
+     "name": "San Diego Zoo",
+     "config": {
+      "url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCC5NfQ6Mf0dq_eEwv4P_hWA",
+      "max_age_days": 30
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 0.9
+    },
+    {
+     "kind": "rss",
+     "name": "Chester Zoo",
+     "config": {
+      "url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCZ9UagJLiMdBIFOHYwT7eLA",
+      "max_age_days": 180
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 0.8
+    },
+    {
+     "kind": "rss",
+     "name": "Monterey Bay Aquarium",
+     "config": {
+      "url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCnM5iMGiKsZg-iOlIO2ZkdQ",
+      "max_age_days": 30
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 0.8
+    },
+    {
+     "kind": "rss",
+     "name": "Cole and Marmalade",
+     "config": {
+      "url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCvmijL-eepDVHYSJHDY3d6w",
+      "max_age_days": 60
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 0.8
+    },
+    {
+     "kind": "rss",
+     "name": "Simon's Cat",
+     "config": {
+      "url": "https://www.youtube.com/feeds/videos.xml?channel_id=UCH6vXjt-BA7QHl0KnfL-7RQ",
+      "max_age_days": 45
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 0.7
+    },
+    {
+     "kind": "rss",
+     "name": "Good News Network: animals",
+     "config": {
+      "url": "https://www.goodnewsnetwork.org/category/news/animals/feed/",
+      "max_age_days": 14
+     },
+     "include": "",
+     "exclude": "",
+     "weight": 0.7
+    }
+   ],
+   "cards": []
+  }
+ ]
+}

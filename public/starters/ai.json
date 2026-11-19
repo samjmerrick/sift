@@ -4,6 +4,7 @@
  "topics": [
   {
    "name": "AI",
+   "category": "Tech",
    "color": "#7c3aed",
    "weight": 4,
    "curated_ratio": 0.9,

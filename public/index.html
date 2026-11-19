@@ -19,9 +19,14 @@
   <header class="topbar">
     <div class="topbar-row">
       <h1 class="wordmark">Sift</h1>
-      <button class="icon-btn" id="refresh" aria-label="Refresh feed" title="Refresh feed">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>
-      </button>
+      <div class="topbar-actions">
+        <button class="icon-btn" id="topics-btn" aria-label="Choose topics" title="Choose topics" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M7 12h10M10 17h4"/></svg>
+        </button>
+        <button class="icon-btn" id="refresh" aria-label="Refresh feed" title="Refresh feed">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>
+        </button>
+      </div>
     </div>
     <nav class="chips" id="chips" aria-label="Filter by topic"></nav>
   </header>

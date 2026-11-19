@@ -4,6 +4,8 @@ import { buildFeed, generateOne } from './lib/feed.js';
 import { GENERATOR_KINDS, scheduleReview, applyReviewToDeck } from './lib/generators.js';
 import { SOURCE_KINDS } from './lib/source-kinds.js';
 import { installPack } from './lib/packs.js';
+import { STAFF, keySigSteps } from './lib/theory.js';
+import { sharesFromWeights, setShare, setGroupShare, toPercents, weightFromPercent } from './lib/balance.js';
 
 // ---------- utilities ----------
 const $ = (sel, el = document) => el.querySelector(sel);
@@ -78,6 +80,7 @@ const ICON = {
   score: '<svg viewBox="0 0 24 24"><path d="M12 5l7 8h-4v6H9v-6H5z"/></svg>',
   play: '<svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>',
   ext: '<svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"/></svg>',
+  lock: '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>',
 };
 const icon = (name) => h('span', { html: ICON[name], style: { display: 'contents' } });
 
@@ -128,17 +131,89 @@ async function hardReload() {
   location.reload();
 }
 
-// ---------- topic chips ----------
-let filterTopic = store.get('filter', null);
-function renderChips() {
-  const chips = $('#chips');
-  if (filterTopic && !meta.topics.some((t) => t.id === filterTopic && t.enabled)) filterTopic = null;
-  const chip = (id, label, color) => h('button', {
-    class: 'chip', 'aria-pressed': String(filterTopic === id),
-    onclick: () => { filterTopic = id; store.set('filter', id); renderChips(); if (route().name !== 'feed') location.hash = '#/'; else resetFeed(); },
-  }, color ? h('span', { class: 'dot', style: { '--c': color } }) : null, label);
-  chips.replaceChildren(chip(null, 'All'), ...meta.topics.filter((t) => t.enabled).map((t) => chip(t.id, t.name, t.color)));
+// ---------- topic filter: quick chips + a full picker ----------
+// The filter is a set of topic ids; an empty set means "all topics". Topics can carry a category (Music, News, …),
+// and when any do, the chip row shows one chip per category instead of one per topic.
+const loadFilter = () => { const v = store.get('filter', null); return new Set(Array.isArray(v) ? v : v ? [v] : []); };
+let filter = loadFilter();
+const sameSet = (a, b) => a.size === b.size && [...a].every((x) => b.has(x));
+const enabledTopics = () => meta.topics.filter((t) => t.enabled);
+/** Group topics by category, in order of first appearance, with uncategorised topics last. */
+function topicGroups(topics = enabledTopics()) {
+  const map = new Map();
+  for (const t of topics) {
+    const k = (t.category || '').trim();
+    if (!map.has(k)) map.set(k, []);
+    map.get(k).push(t);
+  }
+  return [...map].map(([raw, ts]) => ({ raw, name: raw || 'Other', topics: ts })).sort((a, b) => (a.raw === '') - (b.raw === ''));
 }
+function setFilter(ids) {
+  filter = new Set(ids);
+  store.set('filter', [...filter]);
+  renderChips();
+  if (route().name !== 'feed') location.hash = '#/'; else resetFeed();
+}
+function renderChips() {
+  const enabled = enabledTopics();
+  filter = new Set([...filter].filter((id) => enabled.some((t) => t.id === id)));
+  const groups = topicGroups(enabled);
+  const categorised = groups.some((g) => g.raw);
+  const chip = (label, ids, color) => h('button', {
+    class: 'chip', 'aria-pressed': String(sameSet(filter, new Set(ids))), onclick: () => setFilter(ids),
+  }, color ? h('span', { class: 'dot', style: { '--c': color } }) : null, label);
+  const quick = categorised ? groups.map((g) => chip(g.name, g.topics.map((t) => t.id))) : enabled.map((t) => chip(t.name, [t.id], t.color));
+  // A selection made in the picker that matches none of the chips gets a chip of its own.
+  const custom = filter.size && !quick.some((c) => c.getAttribute('aria-pressed') === 'true')
+    ? h('button', { class: 'chip', 'aria-pressed': 'true', onclick: openTopicPicker }, filter.size === 1 ? topicById([...filter][0]).name : `${filter.size} topics`) : null;
+  $('#chips').replaceChildren(chip('All', []), custom, ...quick);
+  const btn = $('#topics-btn');
+  btn.hidden = enabled.length < 2 || route().name === 'settings';
+  if (filter.size) btn.dataset.on = ''; else delete btn.dataset.on;
+}
+
+function openTopicPicker() {
+  const topics = enabledTopics();
+  const total = topics.reduce((s, t) => s + t.weight, 0) || 1;
+  const draft = new Set(filter.size ? filter : topics.map((t) => t.id)); // "all" shows as everything ticked
+  const search = h('input', { type: 'search', placeholder: 'Search topics', 'aria-label': 'Search topics', autocomplete: 'off' });
+  const list = h('div');
+  const apply = h('button', { class: 'btn primary', style: { flex: 1 } });
+  const sync = () => {
+    apply.disabled = draft.size === 0;
+    apply.textContent = draft.size === 0 ? 'Pick at least one topic' : draft.size === topics.length ? 'Show all topics' : `Show ${draft.size} topic${draft.size === 1 ? '' : 's'}`;
+  };
+  const draw = () => {
+    const q = search.value.trim().toLowerCase();
+    const groups = topicGroups(topics).map((g) => ({ ...g, shown: g.topics.filter((t) => !q || `${t.name} ${g.name}`.toLowerCase().includes(q)) })).filter((g) => g.shown.length);
+    list.replaceChildren(...(groups.length ? groups.flatMap((g) => {
+      const ids = g.topics.map((t) => t.id);
+      const on = ids.filter((id) => draft.has(id)).length;
+      return [
+        h('div', { class: 'pick-group' }, h('span', {}, g.name), h('small', {}, `${on}/${ids.length}`),
+          h('button', { class: 'link', onclick: () => { if (on === ids.length) ids.forEach((id) => draft.delete(id)); else ids.forEach((id) => draft.add(id)); draw(); } }, on === ids.length ? 'None' : 'All')),
+        h('div', { class: 'list' }, g.shown.map((t) => {
+          const box = h('input', { type: 'checkbox', class: 'tick', onchange: (e) => { if (e.target.checked) draft.add(t.id); else draft.delete(t.id); draw(); } });
+          box.checked = draft.has(t.id);
+          return h('label', { class: 'row pick' }, h('span', { class: 'dot', style: { '--c': t.color } }),
+            h('div', { class: 'grow' }, h('div', { class: 'title' }, t.name), h('div', { class: 'desc' }, `${Math.round((t.weight / total) * 100)}% of feed`)), box);
+        })),
+      ];
+    }) : [h('p', { class: 'status' }, 'No topics match.')]));
+    sync();
+  };
+  search.oninput = draw;
+  apply.onclick = () => { if (draft.size) setFilter(draft.size === topics.length ? [] : [...draft]); closeSheet(); };
+  openSheet('Choose topics', h('div', {},
+    topics.length > 8 ? h('div', { class: 'field' }, search) : null,
+    h('div', { class: 'pick-quick' },
+      h('button', { class: 'chip', onclick: () => { topics.forEach((t) => draft.add(t.id)); draw(); } }, 'Select all'),
+      h('button', { class: 'chip', onclick: () => { draft.clear(); draw(); } }, 'Clear')),
+    list,
+    h('div', { class: 'pick-foot' }, apply)));
+  draw();
+}
+$('#topics-btn').onclick = openTopicPicker;
 
 // ---------- seen tracking (articles only) ----------
 const seenQueue = new Set();
@@ -194,7 +269,7 @@ async function loadMore(first = false) {
       feed.state = state;
     }
     const cards = buildFeed(feed.state, {
-      n: first ? 8 : 12, topicId: filterTopic, excludeItems: feed.itemIds, recentKeys: feed.recentKeys.slice(-60), recentTopics: feed.recentTopics.slice(-2),
+      n: first ? 8 : 12, topicIds: [...filter], excludeItems: feed.itemIds, recentKeys: feed.recentKeys.slice(-60), recentTopics: feed.recentTopics.slice(-2),
     });
     if (first) list.replaceChildren();
     for (const c of cards) {
@@ -276,7 +351,7 @@ function renderCard(c, { savedId } = {}) {
       else if (savedCardId) { await data.deleteSavedCard(savedCardId); savedCardId = null; }
     },
   });
-  card.append(metaRow(c, [c.generator]), ...body, h('div', { class: 'actions' }, h('span', { class: 'spacer' }), ...btns));
+  card.append(metaRow(c, [c.generator]), ...body.filter(Boolean), h('div', { class: 'actions' }, h('span', { class: 'spacer' }), ...btns));
   return card;
 }
 
@@ -364,6 +439,17 @@ const GEN_RENDER = {
     return [h('p', { class: 'q' }, c.title), h('p', { class: 'sub' }, dirText),
       h('div', { class: 'play' }, h('button', { class: 'btn primary', onclick: play }, icon('play'), 'Play')),
       revealable('Tap to reveal', () => [h('div', { class: 'a-main' }, c.answer), h('div', { class: 'play' }, h('button', { class: 'btn', onclick: play }, icon('play'), 'Hear again'))])];
+  },
+  staff(c) {
+    const midis = c.notes.map((n) => n.midi);
+    const diagram = h('div', { class: 'diagram', html: staffSvg(c) });
+    const play = (label) => h('button', { class: label === 'Play' ? 'btn primary' : 'btn', onclick: () => (c.notes.length > 1 ? playNotes(midis, false, 0.6, 1.1) : playNotes(midis, false)) }, icon('play'), label);
+    return [h('p', { class: 'q' }, c.title), h('p', { class: 'sub' }, c.subtitle), diagram,
+      c.audio === 'always' ? h('div', { class: 'play' }, play('Play')) : null,
+      revealable('Say the notes, then tap to check', () => {
+        diagram.innerHTML = staffSvg(c, true);
+        return [h('div', { class: 'a-main' }, c.answer), h('div', { class: 'a-note' }, c.detail), c.audio !== 'off' ? h('div', { class: 'play' }, play('Hear it')) : null];
+      })];
   },
   prompt(c) {
     return [h('div', { class: 'label', style: { marginTop: '8px' } }, c.label), h('p', { class: 'prompt-text' }, c.text)];
@@ -458,13 +544,64 @@ function keyboardSvg(keys) {
   return `${s}</svg>`;
 }
 
-// ---------- audio (ear training) ----------
+// Notes on a staff. Positions use the diatonic step `d` (see lib/theory.js): one shared vertical scale for both clefs.
+const TREBLE_CLEF = 'M-6 19C-7 26 2 28 3.4 19C4 12 4 4 4.4-6C5-22 6.5-36 9-44C11-50 14-47 13-41C11.5-32 1-26-5-17C-12-6-8 9 2.5 9.5C11.5 10 13.5-2 6.5-7.5C-.5-13-9.5-6.5-6 1.5C-4 6 2 5.5 2.6 1';
+const BASS_CLEF = 'M-4 0C-4-9 8-11 12-3C15 5 6 19-12 27';
+const sharpGlyph = (x, y) => `<path d="M${x - 2} ${y - 8}V${y + 9}M${x + 2} ${y - 9}V${y + 8}" stroke-width="1.1"/><path d="M${x - 4.5} ${y + 1.5}L${x + 4.5} ${y - 2}M${x - 4.5} ${y + 5.5}L${x + 4.5} ${y + 2}" stroke-width="2.4"/>`;
+const flatGlyph = (x, y) => `<path d="M${x - 2} ${y - 12}V${y + 4}C${x + 6} ${y + 1} ${x + 6} ${y - 6} ${x - 2} ${y - 3.5}" stroke-width="1.5"/>`;
+const naturalGlyph = (x, y) => `<path d="M${x - 2.5} ${y - 9}V${y + 4}M${x + 2.5} ${y - 4}V${y + 9}" stroke-width="1.1"/><path d="M${x - 2.5} ${y + 4}L${x + 2.5} ${y + 2.3}M${x - 2.5} ${y - 1.3}L${x + 2.5} ${y - 3}" stroke-width="2"/>`;
+
+function staffSvg(c, labels = false) {
+  const STEP = 5; // px per diatonic step; staff lines are two steps (10px) apart
+  const grand = c.clef === 'grand';
+  const staves = grand ? ['treble', 'bass'] : [c.clef];
+  const topLine = Math.max(...staves.map((k) => STAFF[k].bottom + 8));
+  const bottomLine = Math.min(...staves.map((k) => STAFF[k].bottom));
+  const dTop = topLine + 5;
+  labels = labels && c.notes.length > 1; // a single note's name is already the answer
+  const y = (d) => 10 + (dTop - d) * STEP;
+  const nSig = Math.abs(c.keyN || 0);
+  const x0 = 6 + (grand ? 14 : 0);
+  const sigX = x0 + 38;
+  const noteX0 = sigX + (nSig ? nSig * 9 + 6 : 0) + 24;
+  const GAP = 30;
+  const W = noteX0 + (c.notes.length - 1) * GAP + 28;
+  const H = 20 + (dTop - (bottomLine - 5)) * STEP + (labels ? 22 : 0);
+  let s = `<svg viewBox="0 0 ${W} ${H}" width="${Math.round(W * 1.2)}" role="img" aria-label="${esc(c.subtitle)}" stroke="currentColor" fill="none" stroke-linecap="round" stroke-linejoin="round">`;
+  for (const clef of staves) {
+    const b = STAFF[clef].bottom;
+    for (let i = 0; i < 5; i++) s += `<line x1="${x0}" y1="${y(b + 2 * i)}" x2="${W - 4}" y2="${y(b + 2 * i)}" stroke-width="1" opacity=".75"/>`;
+    if (clef === 'treble') s += `<path d="${TREBLE_CLEF}" transform="translate(${x0 + 14} ${y(b + 2)})" stroke-width="2.3"/>`;
+    else {
+      const fy = y(b + 6);
+      s += `<g transform="translate(${x0 + 8} ${fy})"><path d="${BASS_CLEF}" stroke-width="2.8"/><circle r="3.4" fill="currentColor" stroke="none"/><circle cx="18" cy="-5" r="1.8" fill="currentColor" stroke="none"/><circle cx="18" cy="5" r="1.8" fill="currentColor" stroke="none"/></g>`;
+    }
+    keySigSteps(c.keyN || 0, clef).forEach((st, i) => { s += (c.keyN > 0 ? sharpGlyph : flatGlyph)(sigX + 8 + i * 9, y(b + st)); });
+  }
+  if (grand) {
+    const yt = y(topLine), yb = y(bottomLine), mid = (yt + yb) / 2;
+    s += `<path d="M${x0} ${yt}V${yb}" stroke-width="1.2"/><path d="M${x0 - 3} ${yt}C${x0 - 15} ${yt + 30} ${x0 - 3} ${mid - 18} ${x0 - 11} ${mid}C${x0 - 3} ${mid + 18} ${x0 - 15} ${yb - 30} ${x0 - 3} ${yb}" stroke-width="2"/>`;
+  }
+  c.notes.forEach((n, i) => {
+    const x = noteX0 + i * GAP, ny = y(n.d), b = STAFF[n.staff].bottom;
+    for (let d = b - 2; d >= n.d; d -= 2) s += `<line x1="${x - 10}" y1="${y(d)}" x2="${x + 10}" y2="${y(d)}" stroke-width="1.2"/>`;
+    for (let d = b + 10; d <= n.d; d += 2) s += `<line x1="${x - 10}" y1="${y(d)}" x2="${x + 10}" y2="${y(d)}" stroke-width="1.2"/>`;
+    const up = n.d < b + 4;
+    s += up ? `<line x1="${x + 5.6}" y1="${ny - 1}" x2="${x + 5.6}" y2="${ny - 33}" stroke-width="1.4"/>` : `<line x1="${x - 5.6}" y1="${ny + 1}" x2="${x - 5.6}" y2="${ny + 33}" stroke-width="1.4"/>`;
+    s += `<ellipse cx="${x}" cy="${ny}" rx="6" ry="4.4" transform="rotate(-20 ${x} ${ny})" fill="currentColor" stroke="none"/>`;
+    if (n.show) s += (n.acc > 0 ? sharpGlyph : n.acc < 0 ? flatGlyph : naturalGlyph)(x - 16, ny);
+    if (labels) s += `<text x="${x}" y="${H - 7}" font-size="14" font-weight="600" text-anchor="middle">${esc(n.name)}</text>`;
+  });
+  return `${s}</svg>`;
+}
+
+// ---------- audio (ear training, sight reading) ----------
 let audioCtx;
-function playNotes(midis, harmonic) {
+function playNotes(midis, harmonic, gap = 0.9, dur = 1.4) {
   audioCtx ||= new (window.AudioContext || window.webkitAudioContext)();
   audioCtx.resume();
   const t0 = audioCtx.currentTime + 0.05;
-  midis.forEach((m, i) => tone(m, harmonic ? t0 : t0 + i * 0.9, harmonic ? 2 : 1.4));
+  midis.forEach((m, i) => tone(m, harmonic ? t0 : t0 + i * gap, harmonic ? 2 : dur));
 }
 function tone(midi, t, dur) {
   const f = 440 * 2 ** ((midi - 69) / 12);
@@ -499,7 +636,7 @@ async function renderSaved() {
 }
 
 // ---------- settings ----------
-const TABS = [['topics', 'Topics'], ['sources', 'Sources'], ['cards', 'Card types'], ['decks', 'Decks']];
+const TABS = [['topics', 'Topics'], ['balance', 'Balance'], ['sources', 'Sources'], ['cards', 'Cards'], ['decks', 'Decks']];
 
 async function renderSettings(tab = 'sources') {
   await loadMeta().catch(() => {});
@@ -525,18 +662,97 @@ const SETTINGS = {
   async topics(body) {
     const topics = await data.topics();
     const total = topics.filter((t) => t.enabled).reduce((s, t) => s + t.weight, 0) || 1;
+    const groups = topicGroups(topics);
+    const categorised = groups.some((g) => g.raw);
+    const rows = (ts) => ts.map((t) => rowEl({
+      dot: t.color, title: t.name,
+      desc: t.enabled ? `${Math.round((t.weight / total) * 100)}% of feed · ${Math.round(t.curated_ratio * 100)}% articles when available` : 'Hidden',
+      right: toggle(t.enabled, async (v) => { await data.update('topics', t.id, { enabled: v }).catch(fail); rerender(); }),
+      onclick: () => editTopic(t),
+    }));
     body.append(
-      h('p', { class: 'intro' }, topics.length ? 'Topics are the channels in your feed. Weight controls how much of the feed each one gets.' : 'Topics are the channels in your feed. Start from a starter pack or add your own.'),
-      h('div', { class: 'list' },
-        topics.map((t) => rowEl({
-          dot: t.color, title: t.name,
-          desc: t.enabled ? `${Math.round((t.weight / total) * 100)}% of feed · ${Math.round(t.curated_ratio * 100)}% articles when available` : 'Hidden',
-          right: toggle(t.enabled, async (v) => { await data.update('topics', t.id, { enabled: v }).catch(fail); rerender(); }),
-          onclick: () => editTopic(t),
-        })),
+      h('p', { class: 'intro' }, topics.length ? 'Topics are the channels in your feed. Set how much each one gets in Balance, and group them with a category so the feed\'s topic picker stays tidy.' : 'Topics are the channels in your feed. Start from a starter pack or add your own.'),
+      ...(categorised ? groups.flatMap((g) => [h('div', { class: 'section-h' }, g.name), h('div', { class: 'list' }, rows(g.topics))]) : [h('div', { class: 'list' }, rows(topics))]),
+      h('div', { class: 'list', style: { marginTop: '14px' } },
         rowEl({ title: h('span', { class: 'add-row' }, '+ Add topic'), onclick: () => editTopic(null) }),
         rowEl({ title: h('span', { class: 'add-row' }, '+ Add starter pack'), desc: 'Ready-made topics with sources and card types', onclick: openPackPicker })),
     );
+  },
+  async balance(body) {
+    const topics = (await data.topics()).filter((t) => t.enabled);
+    if (!topics.length) { body.append(h('p', { class: 'intro' }, 'No visible topics yet. Add a topic or a starter pack first.')); return; }
+    const initial = sharesFromWeights(topics.map((t) => t.weight));
+    const initialPct = toPercents(initial);
+    let shares = initial.slice();
+    const locked = topics.map(() => false);
+    const groups = topicGroups(topics).map((g) => ({ ...g, idx: g.topics.map((t) => topics.indexOf(t)) }));
+    const categorised = groups.some((g) => g.raw);
+
+    const stack = h('div', { class: 'stack', role: 'img', 'aria-label': 'Share of feed by topic' }, topics.map((t) => h('span', { style: { '--c': t.color } })));
+    const save = h('button', { class: 'btn primary' }, 'Save');
+    const state = h('span', { class: 'sub' });
+    const refs = topics.map((t, i) => {
+      const range = h('input', { type: 'range', min: 0, max: 100, step: 1, 'aria-label': `${t.name} share`, oninput: () => change(setShare(shares, locked, i, +range.value)) });
+      const num = h('input', { type: 'number', min: 0, max: 100, step: 1, inputmode: 'numeric', 'aria-label': `${t.name} percent`, onchange: () => change(setShare(shares, locked, i, +num.value)) });
+      const lock = h('button', { class: 'act lock', 'aria-label': `Lock ${t.name}`, 'aria-pressed': 'false', title: 'Lock this share', onclick: () => { locked[i] = !locked[i]; lock.setAttribute('aria-pressed', String(locked[i])); draw(); } }, icon('lock'));
+      return { range, num, lock };
+    });
+    const groupRefs = groups.map((g) => {
+      const range = h('input', { type: 'range', min: 0, max: 100, step: 1, 'aria-label': `${g.name} share`, oninput: () => change(setGroupShare(shares, locked, g.idx, +range.value)) });
+      const out = h('b', {});
+      return { range, out };
+    });
+    const change = (next) => { shares = next; draw(); };
+    const draw = () => {
+      const pct = toPercents(shares);
+      topics.forEach((t, i) => {
+        const r = refs[i];
+        r.range.value = shares[i]; r.num.value = pct[i];
+        r.range.disabled = locked[i];
+        r.lock.setAttribute('aria-pressed', String(locked[i]));
+        stack.children[i].style.flexGrow = String(shares[i]);
+        stack.children[i].title = `${t.name} ${pct[i]}%`;
+      });
+      groups.forEach((g, gi) => {
+        const sum = g.idx.reduce((a, i) => a + shares[i], 0);
+        groupRefs[gi].range.value = sum; groupRefs[gi].out.textContent = `${Math.round(sum)}%`;
+        groupRefs[gi].range.disabled = g.idx.every((i) => locked[i]);
+      });
+      const dirty = pct.some((v, i) => v !== initialPct[i]);
+      save.disabled = !dirty;
+      state.textContent = dirty ? 'Unsaved changes' : 'Saved';
+    };
+    save.onclick = async () => {
+      save.disabled = true;
+      const pct = toPercents(shares);
+      try {
+        await Promise.all(topics.map((t, i) => (Math.abs(weightFromPercent(pct[i]) - t.weight) > 0.005 ? data.update('topics', t.id, { weight: weightFromPercent(pct[i]) }) : null)));
+        toast('Balance saved'); rerender();
+      } catch (e) { fail(e); save.disabled = false; }
+    };
+    const even = () => {
+      const lockedSum = shares.reduce((a, v, i) => a + (locked[i] ? v : 0), 0);
+      const free = locked.filter((l) => !l).length;
+      if (free) change(shares.map((v, i) => (locked[i] ? v : (100 - lockedSum) / free)));
+    };
+
+    body.append(
+      h('p', { class: 'intro' }, 'How much of your feed each topic gets. The shares always add up to 100%: move one and the others give way in proportion. Lock a topic to hold its share. A topic with nothing left to show is skipped, so real shares can drift a little.'),
+      stack,
+      ...groups.flatMap((g, gi) => [
+        categorised ? h('div', { class: 'bal-group' }, h('span', {}, g.name), groupRefs[gi].out, groupRefs[gi].range) : null,
+        h('div', { class: 'list' }, g.topics.map((t) => {
+          const i = topics.indexOf(t);
+          return h('div', { class: 'bal-row' },
+            h('div', { class: 'bal-top' }, h('span', { class: 'dot', style: { '--c': t.color } }), h('span', { class: 'grow title' }, t.name), refs[i].lock,
+              h('label', { class: 'pct' }, refs[i].num, '%')),
+            refs[i].range);
+        })),
+      ]),
+      h('div', { class: 'toolbar' }, save, h('button', { class: 'btn', onclick: even }, 'Even out'),
+        h('button', { class: 'btn', onclick: () => { shares = initial.slice(); locked.fill(false); draw(); } }, 'Reset'), state),
+    );
+    draw();
   },
   async sources(body) {
     const sources = await data.sourceStats();
@@ -681,6 +897,8 @@ async function openPackPicker() {
       h('div', { class: 'list' }, packs.map((pack) => {
         const done = pack.topics.every((t) => have.has(t.name));
         const sources = pack.topics.reduce((n, t) => n + (t.sources?.length || 0), 0);
+        const cards = pack.topics.reduce((n, t) => n + (t.cards?.length || 0), 0);
+        const counts = [sources ? `${sources} sources` : null, cards ? `${cards} card types` : null].filter(Boolean).join(', ');
         const btn = h('button', { class: 'btn', disabled: done, onclick: async () => {
           btn.disabled = true; btn.textContent = 'Adding…';
           try {
@@ -693,25 +911,29 @@ async function openPackPicker() {
           } catch (e) { fail(e); btn.disabled = false; btn.textContent = 'Add'; }
         } }, done ? 'Added' : 'Add');
         return h('div', { class: 'row' }, h('div', { class: 'grow' }, h('div', { class: 'title' }, pack.name),
-          h('div', { class: 'desc wrap' }, `${pack.description || ''} (${sources} sources)`)), btn);
+          h('div', { class: 'desc wrap' }, `${pack.description || ''} (${counts})`)), btn);
       })));
   } catch (e) { body.replaceChildren(h('p', { class: 'intro' }, `Couldn't load starter packs: ${e.message}`)); }
 }
 
 function editTopic(t) {
-  t ||= { name: '', color: '#64748b', weight: 2, curated_ratio: 0.5, enabled: true };
+  const active = meta.topics.filter((x) => x.enabled);
+  // A new topic starts with an average share; fine-tune it in Balance.
+  t ||= { name: '', color: '#64748b', weight: active.length ? Math.round((active.reduce((a, x) => a + x.weight, 0) / active.length) * 100) / 100 : 2, curated_ratio: 0.5, enabled: true, category: '' };
   const name = h('input', { type: 'text', value: t.name, placeholder: 'e.g. Chess' });
+  const category = h('input', { type: 'text', value: t.category || '', placeholder: 'e.g. Music, News, Tech', list: 'category-options', autocapitalize: 'words' });
+  const options = h('datalist', { id: 'category-options' }, [...new Set(meta.topics.map((x) => (x.category || '').trim()).filter(Boolean))].map((c) => h('option', { value: c })));
   const color = h('input', { type: 'color', value: t.color });
-  const wOut = h('b', {}, String(t.weight));
-  const weight = h('input', { type: 'range', min: 0, max: 10, step: 0.5, value: t.weight, oninput: () => { wOut.textContent = weight.value; } });
   const rOut = h('b', {}, `${Math.round(t.curated_ratio * 100)}%`);
   const ratio = h('input', { type: 'range', min: 0, max: 1, step: 0.05, value: t.curated_ratio, oninput: () => { rOut.textContent = `${Math.round(ratio.value * 100)}%`; } });
+  const total = active.reduce((a, x) => a + x.weight, 0) || 1;
+  const share = t.id && t.enabled ? `${Math.round((t.weight / total) * 100)}% of your feed` : null;
   openSheet(t.id ? 'Edit topic' : 'New topic', h('div', {},
-    field('Name', name), field('Colour', color),
-    field(h('span', {}, 'Share of feed (weight): ', wOut), weight, 'Relative to other topics.'),
+    field('Name', name), field('Category', h('div', {}, category, options), 'Groups topics in the feed\'s topic picker and chips. Leave empty for none.'), field('Colour', color),
+    share ? h('div', { class: 'field' }, h('span', {}, 'Share of feed'), h('div', { class: 'sub' }, share, ' · ', h('button', { class: 'link', onclick: () => { location.hash = '#/settings/balance'; } }, 'change in Balance'))) : null,
     field(h('span', {}, 'Articles vs practice cards: ', rOut), ratio, 'Chance each slot is an article when unread articles exist; otherwise it is a practice card.'),
     h('div', { class: 'toolbar' },
-      h('button', { class: 'btn primary', onclick: () => name.value.trim() ? saveRow('topics', t, { name: name.value, color: color.value, weight: +weight.value, curated_ratio: +ratio.value, enabled: t.enabled }) : toast('Name is required') }, 'Save'),
+      h('button', { class: 'btn primary', onclick: () => name.value.trim() ? saveRow('topics', t, { name: name.value.trim(), category: category.value.trim(), color: color.value, weight: t.weight, curated_ratio: +ratio.value, enabled: t.enabled }) : toast('Name is required') }, 'Save'),
       t.id ? h('button', { class: 'btn danger', onclick: () => deleteRow('topics', t, `"${t.name}" and all its sources and card types`) }, 'Delete') : null)));
 }
 
@@ -842,6 +1064,7 @@ function onRoute() {
   if (r.name !== 'feed' && feed.el?.isConnected) feed.scrollY = scrollY;
   document.querySelectorAll('.tabbar a').forEach((a) => (a.dataset.tab === r.name ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
   $('#chips').hidden = r.name === 'settings';
+  renderChips();
   closeSheet();
   if (r.name === 'saved') renderSaved();
   else if (r.name === 'settings') renderSettings(TABS.some(([k]) => k === r.arg) ? r.arg : 'sources');

@@ -97,3 +97,12 @@ test('spaced repetition: daily new limit, scheduling, relearn — persisted roun
   assert.equal(c.card_id, b.card_id);
   assert.equal(c.status, 'relearn');
 });
+
+test('topicIds filters to several topics at once', async () => {
+  const state = await loadState();
+  const ids = state.topics.filter((t) => ['Russian', 'Guitar'].includes(t.name)).map((t) => t.id);
+  const cards = buildFeed(state, { n: 30, topicIds: ids });
+  assert.equal(cards.length, 30);
+  assert.ok(cards.every((c) => ids.includes(c.topic_id)));
+  assert.ok(new Set(cards.map((c) => c.topic_id)).size === 2, 'both selected topics appear');
+});

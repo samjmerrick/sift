@@ -1,0 +1,121 @@
+{
+ "name": "Sight reading",
+ "description": "Note-naming drills on treble, bass and grand staff: single notes and short passages, with key signatures, accidentals and playback. No instrument needed.",
+ "topics": [
+  {
+   "name": "Sight reading",
+   "category": "Music",
+   "color": "#0d9488",
+   "weight": 2,
+   "curated_ratio": 0,
+   "sources": [],
+   "cards": [
+    {
+     "kind": "staff_notes",
+     "name": "Treble clef: single notes",
+     "config": {
+      "clef": "treble",
+      "notes": 1,
+      "range": "one_ledger",
+      "keys": "C",
+      "accidentals": false,
+      "audio": "after_reveal"
+     },
+     "weight": 2
+    },
+    {
+     "kind": "staff_notes",
+     "name": "Bass clef: single notes",
+     "config": {
+      "clef": "bass",
+      "notes": 1,
+      "range": "one_ledger",
+      "keys": "C",
+      "accidentals": false,
+      "audio": "after_reveal"
+     },
+     "weight": 2
+    },
+    {
+     "kind": "staff_notes",
+     "name": "Grand staff: single notes",
+     "config": {
+      "clef": "grand",
+      "notes": 1,
+      "range": "one_ledger",
+      "keys": "C",
+      "accidentals": false,
+      "audio": "after_reveal"
+     },
+     "weight": 1.5
+    },
+    {
+     "kind": "staff_notes",
+     "name": "Treble clef: short passages",
+     "config": {
+      "clef": "treble",
+      "notes": 4,
+      "range": "one_ledger",
+      "max_leap": 2,
+      "keys": "C,G,F",
+      "accidentals": false,
+      "audio": "after_reveal"
+     },
+     "weight": 1.5
+    },
+    {
+     "kind": "staff_notes",
+     "name": "Bass clef: short passages",
+     "config": {
+      "clef": "bass",
+      "notes": 4,
+      "range": "one_ledger",
+      "max_leap": 2,
+      "keys": "C,G,F",
+      "accidentals": false,
+      "audio": "after_reveal"
+     },
+     "weight": 1.5
+    },
+    {
+     "kind": "staff_notes",
+     "name": "Grand staff: passages with accidentals",
+     "config": {
+      "clef": "grand",
+      "notes": 5,
+      "range": "staff",
+      "max_leap": 3,
+      "keys": "C,G,D,F,B♭",
+      "accidentals": true,
+      "audio": "after_reveal"
+     },
+     "weight": 1
+    },
+    {
+     "kind": "prompts",
+     "name": "Reading tips",
+     "config": {
+      "label": "Reading tip",
+      "lines": [
+       "Before you play or name anything: check the clef, then the key signature, then scan for the highest and lowest notes.",
+       "Treble clef lines, bottom to top: E G B D F (Every Good Boy Deserves Football). Spaces spell FACE.",
+       "Bass clef lines, bottom to top: G B D F A (Good Boys Do Fine Always). Spaces: A C E G (All Cows Eat Grass).",
+       "Learn a few landmark notes cold: middle C, treble G (the clef's curl), bass F (between the clef's two dots). Name everything else as a distance from a landmark.",
+       "Read by shape, not by name: a step is line-to-neighbouring-space, a third skips one, and so on. Your eye should see the interval before you name the note.",
+       "Ledger lines: count outward from the staff. The first ledger line above the treble staff is A; the first below is C (middle C).",
+       "Middle C sits on its own ledger line between the staves, one line below the treble staff and one above the bass staff.",
+       "In a key with sharps, the last sharp in the signature is a half step below the tonic. G major has F♯: every F is sharp until you see a natural.",
+       "In a key with flats, the second-to-last flat is the key. Two flats (B♭ E♭): B♭ major.",
+       "An accidental lasts until the end of the bar. A natural sign cancels the key signature for that note too.",
+       "Look ahead. While you name or play one note, your eyes should already be on the next two or three.",
+       "Don't stop to fix a mistake: keep the beat going and carry on, as you would in a real performance.",
+       "Check where the passage sits relative to the staff: is it mostly stepwise, or does it leap? Stepwise reading is faster; practise leaps separately.",
+       "Practise for a few minutes every day rather than long sessions: reading is a reflex you build with volume."
+      ]
+     },
+     "weight": 0.6
+    }
+   ]
+  }
+ ]
+}

@@ -71,12 +71,13 @@ export function articleCard(r) {
 
 /**
  * Build the next page of the feed.
- * opts: { n, topicId (filter), excludeItems: Set|array, recentKeys: Set|array, recentTopics: number[] }
+ * opts: { n, topicIds (filter: array of topic ids; empty = all) or topicId, excludeItems: Set|array, recentKeys: Set|array, recentTopics: number[] }
  */
 export function buildFeed(state, opts = {}) {
   const n = Math.min(Number(opts.n) || 10, 30);
   let topics = state.topics.filter((t) => t.enabled);
-  if (opts.topicId) topics = topics.filter((t) => t.id === Number(opts.topicId));
+  const only = new Set((opts.topicIds ?? (opts.topicId ? [opts.topicId] : [])).map(Number));
+  if (only.size) topics = topics.filter((t) => only.has(t.id));
   const excludeItems = new Set(opts.excludeItems || []);
   const excludeKeys = new Set(opts.recentKeys || []);
   const recentTopics = [...(opts.recentTopics || [])];

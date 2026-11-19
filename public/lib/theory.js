@@ -107,3 +107,40 @@ export const BARRE_SHAPES = [
   ['A', 'dom7', [null, 0, 2, 0, 2, 0], 'seventh'], ['A', 'min7', [null, 0, 2, 0, 1, 0], 'seventh'],
   ['A', 'maj7', [null, 0, 2, 1, 2, 0], 'seventh'],
 ];
+
+// ---------- Staff notation (for sight-reading cards) ----------
+// A written note is { d, acc } where d is the diatonic step: octave * 7 + letter (C=0 … B=6), so middle C (C4) is 28.
+// Both clefs share one vertical scale, which keeps the grand staff honest: middle C sits on the same ledger line.
+export const STAFF = {
+  treble: { bottom: 30, label: 'treble clef' }, // bottom line E4
+  bass: { bottom: 18, label: 'bass clef' }, // bottom line G2
+};
+export const MIDDLE_C = 28;
+export const letterOf = (d) => mod(d, 7);
+export const octaveOf = (d) => Math.floor(d / 7);
+
+/** Sharps (+) or flats (−) for a major key given by name, e.g. 'D' → 2, 'B♭' → −2. */
+export const keySigCount = (name) => MAJOR_KEYS.find(([k]) => k === name)?.[1] ?? 0;
+
+/** Accidental the key signature gives each letter (0..6 = C..B): { 3: 1 } for G major (F♯). */
+export function keySigMap(n) {
+  const map = {};
+  const letterOfAcc = (a) => LETTERS.indexOf(a[0]);
+  for (const a of signatureAccidentals(n)) map[letterOfAcc(a)] = n > 0 ? 1 : -1;
+  return map;
+}
+
+// Where each accidental of a key signature sits, as steps above the bottom line (treble); bass is two steps lower.
+const SIG_STEPS = { sharps: [8, 5, 9, 6, 3, 7, 4], flats: [4, 7, 3, 6, 2, 5, 1] };
+export function keySigSteps(n, clef) {
+  const steps = (n >= 0 ? SIG_STEPS.sharps : SIG_STEPS.flats).slice(0, Math.abs(n));
+  return steps.map((s) => (clef === 'bass' ? s - 2 : s));
+}
+
+/** The concrete note for a written step in a key: the key signature's accidental unless one is given explicitly. */
+export function writtenNote(d, keyN, explicitAcc) {
+  const acc = explicitAcc ?? keySigMap(keyN)[letterOf(d)] ?? 0;
+  return { d, acc };
+}
+export const staffNoteName = (n) => noteName({ L: letterOf(n.d), acc: n.acc });
+export const staffNoteMidi = (n) => (octaveOf(n.d) + 1) * 12 + LETTER_PC[letterOf(n.d)] + n.acc;
