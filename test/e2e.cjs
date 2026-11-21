@@ -11,6 +11,17 @@ const BASE = process.env.BASE_URL || 'http://localhost:5173';
 const OUT = process.argv[2];
 const sql = postgres(process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/sift_dev', { onnotice: () => {} });
 const assert = (cond, msg) => { if (!cond) throw new Error(`FAILED: ${msg}`); console.log(`  ✓ ${msg}`); };
+// Filter the feed through the topic picker: one category group, or everything when `group` is null.
+const pickTopics = async (p, group) => {
+  await p.click('#topics-btn');
+  await p.waitForSelector('.pick-quick');
+  if (group) {
+    await p.click('.pick-quick .chip:has-text("Clear")');
+    await p.click(`.pick-group:has-text("${group}") button.link`);
+  } else await p.click('.pick-quick .chip:has-text("Select all")');
+  await p.click('.pick-foot .btn.primary');
+  await p.waitForSelector('#sheet', { state: 'hidden' });
+};
 
 (async () => {
   // A local feed for "add source" / "preview" / "fetch now".
@@ -80,7 +91,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(`FAILED: ${msg}`); co
   assert(count >= 40, `infinite scroll keeps loading (${count} cards)`);
   assert(kinds.has('article') && kinds.has('flashcard') && kinds.size >= 6, `mixes card kinds: ${[...kinds].join(', ')}`);
 
-  await p.click('.chip:has-text("Languages")');
+  await pickTopics(p, 'Languages');
   await p.waitForSelector('.k-flashcard .reveal');
   await p.click('.k-flashcard .reveal');
   await p.click('.k-flashcard .grade .good');
@@ -88,7 +99,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(`FAILED: ${msg}`); co
   const [studied] = await sql`select count(*)::int n from cards where due is not null and introduced_at is not null`;
   assert(studied.n === 1, 'grading a flashcard schedules it in the database');
 
-  await p.click('.chip:has-text("All")');
+  await pickTopics(p, null);
   await p.waitForSelector('.k-article');
   const itemId = await p.$eval('.k-article', (el) => Number(el.dataset.item));
   await p.click(`.k-article[data-item="${itemId}"] .act.up`);
@@ -213,7 +224,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(`FAILED: ${msg}`); co
   await shot('decks');
 
   await p.click('a[data-tab=feed]');
-  await p.click('.chip:has-text("Other")');
+  await pickTopics(p, 'Other');
   await p.waitForSelector('.k-prompt');
   assert(true, 'new topic and card type appear in the feed');
 

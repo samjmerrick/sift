@@ -50,7 +50,7 @@ Deno.serve(async (req) => {
     const body = await req.json();
     switch (body.action) {
       case 'preview':
-        return json((await previewSource(body.source)).slice(0, 15).map(({ content_html: _, ...rest }) => rest));
+        return json((await previewSource(body.source)).slice(0, 15).map(({ content_html: _, ...rest }: Record<string, unknown>) => rest));
       case 'fetch_source': {
         const [src] = await sql`select * from sources where id = ${Number(body.id)}`;
         if (!src) return json({ error: 'Source not found' }, 404);
