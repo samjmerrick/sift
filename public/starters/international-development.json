@@ -5,7 +5,7 @@
   {
    "name": "International development",
    "color": "#ca8a04",
-   "curated_ratio": 1,
+   "kind": "articles",
    "sources": [
     {
      "kind": "rss",
@@ -117,8 +117,7 @@
      "exclude": "travel advice",
      "weight": 0.8
     }
-   ],
-   "cards": []
+   ]
   }
  ]
 }

@@ -5,21 +5,73 @@
     {
       "name": "Programming",
       "color": "#2563eb",
-      "weight": 3,
-      "curated_ratio": 0.9,
+      "kind": "articles",
       "sources": [
-        { "kind": "hn", "name": "Hacker News: programming", "config": { "min_points": 200, "days": 3 }, "include": "programming, software, compiler, database, Rust, Go, Python, TypeScript, JavaScript, Linux, performance, API, architecture, debugging", "exclude": "", "weight": 1 },
-        { "kind": "rss", "name": "Lobsters: programming", "config": { "url": "https://lobste.rs/t/programming.rss", "max_age_days": 7 }, "include": "", "exclude": "", "weight": 1 },
-        { "kind": "rss", "name": "Julia Evans", "config": { "url": "https://jvns.ca/atom.xml", "max_age_days": 60 }, "include": "", "exclude": "", "weight": 1.2 },
-        { "kind": "rss", "name": "Simon Willison", "config": { "url": "https://simonwillison.net/atom/everything/", "max_age_days": 14 }, "include": "", "exclude": "", "weight": 1 }
-      ],
+        {
+          "kind": "hn",
+          "name": "Hacker News: programming",
+          "config": {
+            "min_points": 200,
+            "days": 3
+          },
+          "include": "programming, software, compiler, database, Rust, Go, Python, TypeScript, JavaScript, Linux, performance, API, architecture, debugging",
+          "exclude": "",
+          "weight": 1
+        },
+        {
+          "kind": "rss",
+          "name": "Lobsters: programming",
+          "config": {
+            "url": "https://lobste.rs/t/programming.rss",
+            "max_age_days": 7
+          },
+          "include": "",
+          "exclude": "",
+          "weight": 1
+        },
+        {
+          "kind": "rss",
+          "name": "Julia Evans",
+          "config": {
+            "url": "https://jvns.ca/atom.xml",
+            "max_age_days": 60
+          },
+          "include": "",
+          "exclude": "",
+          "weight": 1.2
+        },
+        {
+          "kind": "rss",
+          "name": "Simon Willison",
+          "config": {
+            "url": "https://simonwillison.net/atom/everything/",
+            "max_age_days": 14
+          },
+          "include": "",
+          "exclude": "",
+          "weight": 1
+        }
+      ]
+    },
+    {
+      "name": "Programming practice",
+      "color": "#2563eb",
+      "kind": "cards",
       "cards": [
-        { "kind": "prompts", "name": "Practice prompts", "weight": 1, "config": { "label": "Practice", "lines": [
-          "Pick a function you wrote last week and make it simpler without changing what it does.",
-          "Read one piece of code from a library you use every day and explain it to yourself in three sentences.",
-          "Write a failing test for a bug you suspect before you try to fix it.",
-          "Delete something unused from a project today."
-        ] } }
+        {
+          "kind": "prompts",
+          "name": "Practice prompts",
+          "weight": 1,
+          "config": {
+            "label": "Practice",
+            "lines": [
+              "Pick a function you wrote last week and make it simpler without changing what it does.",
+              "Read one piece of code from a library you use every day and explain it to yourself in three sentences.",
+              "Write a failing test for a bug you suspect before you try to fix it.",
+              "Delete something unused from a project today."
+            ]
+          }
+        }
       ]
     }
   ]

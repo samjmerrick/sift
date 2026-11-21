@@ -5,7 +5,7 @@
   {
    "name": "Russian",
    "color": "#dc2626",
-   "curated_ratio": 0.3,
+   "kind": "articles",
    "sources": [
     {
      "kind": "rss",
@@ -29,7 +29,12 @@
      "exclude": "",
      "weight": 1
     }
-   ],
+   ]
+  },
+  {
+   "name": "Russian practice",
+   "color": "#dc2626",
+   "kind": "cards",
    "cards": [
     {
      "kind": "flashcards",

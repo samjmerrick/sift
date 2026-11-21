@@ -90,3 +90,29 @@ test('app_settings: owner can read and write, a stranger and anon cannot', async
   await assert.rejects(asUser(sql, (tx) => tx`insert into app_settings (key, value) values ('x', '1'::jsonb)`, stranger), /row-level security/);
   await assert.rejects(sql.begin(async (tx) => { await tx`set local role anon`; await tx`select * from app_settings`; }), /permission denied/);
 });
+
+test('split_mixed_topics turns mixed topics into an articles topic plus a practice topic', async () => {
+  const mk = async (name, position, { src = true, gen = true, enabled = true } = {}) => {
+    const [t] = await sql`insert into topics (name, color, weight, enabled, position) values (${name}, '#123456', 1.5, ${enabled}, ${position}) returning id`;
+    if (src) await sql`insert into sources (topic_id, kind, name, config) values (${t.id}, 'rss', ${`${name} feed`}, '{"url":"https://x.test/feed"}')`;
+    if (gen) await sql`insert into generators (topic_id, kind, name, config) values (${t.id}, 'prompts', ${`${name} prompts`}, '{"lines":"a"}')`;
+    return t.id;
+  };
+  const mixed = await mk('Chess', 0);
+  const clash = await mk('Chess practice', 1, { gen: false });
+  const cardsOnly = await mk('Drills', 2, { src: false });
+  const articlesOnly = await mk('News', 3, { gen: false });
+  await sql`insert into saved_cards (topic_id, payload) values (${mixed}, '{}')`;
+  assert.equal((await sql`select private.split_mixed_topics() n`)[0].n, 1);
+  const kinds = Object.fromEntries((await sql`select id, kind from topics`).map((r) => [r.id, r.kind]));
+  assert.deepEqual([kinds[mixed], kinds[clash], kinds[cardsOnly], kinds[articlesOnly]], ['articles', 'articles', 'cards', 'articles']);
+  const [made] = await sql`select * from topics where name = 'Chess practice 2'`;
+  assert.deepEqual([made.kind, made.color, made.weight, made.enabled, made.position], ['cards', '#123456', 1.5, true, 1], 'name clash gets a number; placed right after the original');
+  assert.equal((await sql`select count(*)::int n from generators where topic_id = ${made.id}`)[0].n, 1, 'card types moved');
+  assert.equal((await sql`select count(*)::int n from generators where topic_id = ${mixed}`)[0].n, 0);
+  assert.equal((await sql`select count(*)::int n from sources where topic_id = ${mixed}`)[0].n, 1, 'sources stay');
+  assert.equal((await sql`select count(*)::int n from saved_cards where topic_id = ${made.id}`)[0].n, 1, 'saved cards moved');
+  const pos = Object.fromEntries((await sql`select name, position from topics`).map((r) => [r.name, r.position]));
+  assert.deepEqual([pos['Chess'], pos['Chess practice 2'], pos['Chess practice'], pos['Drills'], pos['News']], [0, 1, 2, 3, 4], 'later topics shift down');
+  assert.equal((await sql`select private.split_mixed_topics() n`)[0].n, 0, 'idempotent');
+});

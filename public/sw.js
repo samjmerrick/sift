@@ -1,5 +1,5 @@
 // App-shell cache so Sift opens instantly (and offline). Data requests always go to the network.
-const CACHE = 'sift-v10';
+const CACHE = 'sift-v11';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'config.js', 'manifest.webmanifest', 'icon.svg', 'vendor/supabase-js-2.118.0.js',
   'lib/balance.js', 'lib/csv.js', 'lib/data.js', 'lib/feed.js', 'lib/generators.js', 'lib/packs.js', 'lib/rank.js', 'lib/sanitise.js', 'lib/source-kinds.js', 'lib/theory.js'];
 

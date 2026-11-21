@@ -147,6 +147,7 @@ async function hardReload() {
 const loadFilter = () => { const v = store.get('filter', null); return new Set(Array.isArray(v) ? v : v ? [v] : []); };
 let filter = loadFilter();
 const sameSet = (a, b) => a.size === b.size && [...a].every((x) => b.has(x));
+const KIND_LABEL = { articles: 'Articles', cards: 'Cards' };
 const enabledTopics = () => meta.topics.filter((t) => t.enabled);
 function setFilter(ids) {
   filter = new Set(ids);
@@ -160,7 +161,43 @@ function renderChips() {
   const btn = $('#topics-btn');
   btn.hidden = enabled.length < 2 || route().name === 'settings';
   if (filter.size) btn.dataset.on = ''; else delete btn.dataset.on;
+  renderTypebar();
 }
+
+// ---------- feed type filter: All · Articles · Cards (this visit only; not remembered) ----------
+let feedType = 'all';
+const typebar = $('#typebar');
+const TYPES = [['all', 'All'], ['articles', 'Articles'], ['cards', 'Cards']];
+typebar.querySelector('.seg').append(...TYPES.map(([k, label]) => h('button', {
+  type: 'button', 'data-type': k, onclick: () => setFeedType(k),
+}, label)));
+function renderTypebar() {
+  const enabled = enabledTopics();
+  const both = enabled.some((t) => t.kind === 'articles') && enabled.some((t) => t.kind === 'cards');
+  if (!both && feedType !== 'all') { feedType = 'all'; feed.dirty = true; }
+  typebar.hidden = !(both && route().name === 'feed');
+  typebar.querySelectorAll('button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.type === feedType)));
+}
+function setFeedType(k) {
+  if (k === feedType) return;
+  feedType = k;
+  renderTypebar();
+  showTypebar(true);
+  resetFeed();
+}
+// Slide away when scrolling down, come back on any scroll up (and always near the top).
+let barY = 0, barTick = false;
+function showTypebar(on) { if (on) typebar.removeAttribute('data-hidden'); else typebar.setAttribute('data-hidden', ''); }
+addEventListener('scroll', () => {
+  if (barTick || typebar.hidden) return;
+  barTick = true;
+  requestAnimationFrame(() => {
+    barTick = false;
+    const y = scrollY, d = y - barY;
+    if (y < 60) { showTypebar(true); barY = y; } else if (d > 8) { showTypebar(false); barY = y; } else if (d < -8) { showTypebar(true); barY = y; }
+  });
+}, { passive: true });
+new ResizeObserver(() => document.documentElement.style.setProperty('--topbar-h', `${$('.topbar').offsetHeight}px`)).observe($('.topbar'));
 
 function openTopicPicker() {
   const topics = enabledTopics();
@@ -180,7 +217,7 @@ function openTopicPicker() {
       const box = h('input', { type: 'checkbox', class: 'tick', onchange: (e) => { if (e.target.checked) draft.add(t.id); else draft.delete(t.id); draw(); } });
       box.checked = draft.has(t.id);
       return h('label', { class: 'row pick' }, h('span', { class: 'dot', style: { '--c': t.color } }),
-        h('div', { class: 'grow' }, h('div', { class: 'title' }, t.name), h('div', { class: 'desc' }, `${Math.round((t.weight / total) * 100)}% of feed`)), box);
+        h('div', { class: 'grow' }, h('div', { class: 'title' }, t.name), h('div', { class: 'desc' }, `${KIND_LABEL[t.kind]} · ${Math.round((t.weight / total) * 100)}% of feed`)), box);
     })) : h('p', { class: 'status' }, 'No topics match.'));
     sync();
   };
@@ -228,6 +265,7 @@ function resetFeed() {
 function renderFeed() {
   if (feed.el && !feed.dirty) { view.replaceChildren(feed.el); requestAnimationFrame(() => scrollTo(0, feed.scrollY)); return; }
   Object.assign(feed, { state: null, loading: false, done: false, itemIds: [], recentKeys: [], recentTopics: [], dirty: false, scrollY: 0 });
+  barY = 0; showTypebar(true);
   feed.list = h('div', { class: 'feed' });
   feed.status = h('div', { class: 'status' });
   feed.sentinel = h('div', { style: { height: '1px' } });
@@ -252,7 +290,7 @@ async function loadMore(first = false) {
       feed.state = state;
     }
     const cards = buildFeed(feed.state, {
-      n: first ? 8 : 12, topicIds: [...filter], excludeItems: feed.itemIds, recentKeys: feed.recentKeys.slice(-60), recentTopics: feed.recentTopics.slice(-2),
+      n: first ? 8 : 12, topicIds: [...filter], type: feedType, excludeItems: feed.itemIds, recentKeys: feed.recentKeys.slice(-60), recentTopics: feed.recentTopics.slice(-2),
     });
     if (first) list.replaceChildren();
     for (const c of cards) {
@@ -265,13 +303,18 @@ async function loadMore(first = false) {
       feed.done = true;
       if (!list.children.length) {
         const fresh = !meta.topics.length;
-        list.replaceChildren(h('div', { class: 'empty' },
-          h('h3', {}, fresh ? 'Welcome to Sift' : 'Nothing here yet'),
-          h('p', {}, fresh
-            ? 'Your feed is empty because you have no topics yet. Add a starter pack, or create your own topic in Settings.'
-            : 'Sources are fetched every hour. Add sources or card types in Settings, or use "Fetch all now" there.'),
-          fresh ? h('button', { class: 'btn primary', onclick: () => { location.hash = '#/settings/topics'; } }, 'Set up topics') : null));
-      } else feed.status.textContent = "You're all caught up.";
+        const typed = feedType !== 'all' && !fresh;
+        const noun = feedType === 'articles' ? 'article' : 'card';
+        const inFilter = enabledTopics().filter((t) => t.kind === feedType && (!filter.size || filter.has(t.id)));
+        const [title, text] = fresh ? ['Welcome to Sift', 'Your feed is empty because you have no topics yet. Add a starter pack, or create your own topic in Settings.']
+          : !typed ? ['Nothing here yet', 'Sources are fetched every hour. Add sources or card types in Settings, or use "Fetch all now" there.']
+          : !inFilter.length ? [`No ${noun} topics in your filter`, `Your topic filter has no ${noun} topics. Change the filter, or show everything.`]
+          : feedType === 'articles' ? ["You're all caught up on articles", 'New articles arrive every hour. Show everything to mix in practice cards.']
+          : ['No cards to practise right now', 'Nothing is due, or the daily new-card limit has been reached. Show everything to see articles.'];
+        list.replaceChildren(h('div', { class: 'empty' }, h('h3', {}, title), h('p', {}, text),
+          fresh ? h('button', { class: 'btn primary', onclick: () => { location.hash = '#/settings/topics'; } }, 'Set up topics')
+            : typed ? h('button', { class: 'btn primary', onclick: () => setFeedType('all') }, 'Show everything') : null));
+      } else feed.status.textContent = feedType === 'articles' ? "You're all caught up on articles." : "You're all caught up.";
     }
   } catch (e) {
     if (first) list.replaceChildren();
@@ -1186,11 +1229,13 @@ const SETTINGS = {
     const ordered = rankOrder(topics);
     let rank = ordered.filter((t) => t.enabled);
     const hidden = ordered.filter((t) => !t.enabled);
-    const errored = new Set(stats.filter((s) => s.last_error).map((s) => s.topic_id));
-    const desc = (t) => `${plural(stats.filter((s) => s.topic_id === t.id).length, ['source', 'sources'])} · ${plural(gens.filter((g) => g.topic_id === t.id).length, ['card type', 'card types'])}`;
+    const errored = new Set(stats.filter((s) => s.last_error).map((s) => s.topic_id)); // only article topics have sources
+    const desc = (t) => (t.kind === 'cards'
+      ? `Cards · ${plural(gens.filter((g) => g.topic_id === t.id).length, ['card type', 'card types'])}`
+      : `Articles · ${plural(stats.filter((s) => s.topic_id === t.id).length, ['source', 'sources'])}`);
 
     body.append(h('p', { class: 'intro' }, topics.length
-      ? 'Your topics in order of priority: the higher a topic sits, the more of your feed it gets. Drag the handle or use the arrows to reorder. Tap a topic to manage its sources and card types.'
+      ? 'Your topics in order of priority: the higher a topic sits, the more of your feed it gets. Article topics are for reading, card topics for practice. Drag the handle or use the arrows to reorder. Tap a topic to manage its sources or card types.'
       : 'Topics are the channels in your feed. Start from a starter pack or add your own.'));
 
     if (rank.length) {
@@ -1320,7 +1365,7 @@ const SETTINGS = {
     body.append(
       h('div', { class: 'list', style: { marginTop: '18px' } },
         rowEl({ title: h('span', { class: 'add-row' }, '+ Add topic'), onclick: () => editTopic(null) }),
-        rowEl({ title: h('span', { class: 'add-row' }, '+ Add starter pack'), desc: 'Ready-made topics with sources and card types', onclick: openPackPicker })),
+        rowEl({ title: h('span', { class: 'add-row' }, '+ Add starter pack'), desc: 'Ready-made article and practice topics', onclick: openPackPicker })),
       h('div', { class: 'toolbar' }, fetchBtn));
   },
   async domains(body) {
@@ -1376,7 +1421,7 @@ function sourceList(t, sources) {
     actions: (ctx) => [
       ctx.enable(true), ctx.enable(false),
       {
-        label: 'Move to topic…', run: (ids) => pickerSheet(`Move ${plural(ids.length, ctx.noun)} to`, meta.topics.map((x) => [x.id, x.name, x.color]), null,
+        label: 'Move to topic…', run: (ids) => pickerSheet(`Move ${plural(ids.length, ctx.noun)} to`, meta.topics.filter((x) => x.kind === 'articles').map((x) => [x.id, x.name, x.color]), null,
           (topicId) => ctx.apply(() => data.updateMany('sources', ids, { topic_id: topicId }), `Moved ${plural(ids.length, ctx.noun)} to ${topicById(topicId).name}`)),
       },
       {
@@ -1444,21 +1489,20 @@ async function renderTopicPage(id) {
     body.append(
       h('div', { class: 'section-h' }, 'Topic settings'),
       h('div', { class: 'list' }, rowEl({
-        dot: t.color, title: t.name, desc: `${where} · ${Math.round(t.curated_ratio * 100)}% articles`,
+        dot: t.color, title: t.name, desc: `${t.kind === 'cards' ? 'Practice cards' : 'Articles'} · ${where}`,
         onclick: () => editTopic(t), right: h('button', { class: 'btn', 'aria-label': `Edit ${t.name}`, onclick: (e) => { e.stopPropagation(); editTopic(t); } }, 'Edit'),
       })),
       h('div', { class: 'toolbar' },
         h('button', { class: 'btn topic-flip', onclick: flip }, t.enabled ? 'Hide topic' : 'Show topic'),
         h('button', { class: 'btn danger', onclick: () => deleteRow('topics', t, `"${t.name}" and all its sources and card types`, async () => { await rebalanceNow(); location.hash = '#/settings/topics'; }) }, 'Delete topic')),
-      h('div', { class: 'section-h' }, 'Sources'),
-      h('p', { class: 'intro' }, 'Where this topic’s articles come from. Strict sources and score thresholds keep the feed useful.'));
-    const srcBox = h('div');
-    body.append(srcBox, h('div', { class: 'section-h' }, 'Card types'),
-      h('p', { class: 'intro' }, 'Practice cards made from code and your own decks and lists. They keep the feed going when articles run out. Decks are created and edited from a Flashcards or Notes card type.'));
-    const cardBox = h('div');
-    body.append(cardBox);
-    manage(srcBox, sourceList(t, stats.filter((s) => s.topic_id === id)));
-    manage(cardBox, cardList(t, gens.filter((g) => g.topic_id === id)));
+      h('div', { class: 'section-h' }, t.kind === 'cards' ? 'Card types' : 'Sources'),
+      h('p', { class: 'intro' }, t.kind === 'cards'
+        ? 'Practice cards made from code and your own decks and lists. This topic only ever shows cards. Decks are created and edited from a Flashcards or Notes card type.'
+        : 'Where this topic’s articles come from. This topic only ever shows articles. Strict sources and score thresholds keep the feed useful.'));
+    const box = h('div');
+    body.append(box);
+    if (t.kind === 'cards') manage(box, cardList(t, gens.filter((g) => g.topic_id === id)));
+    else manage(box, sourceList(t, stats.filter((s) => s.topic_id === id)));
   } catch (e) { body.replaceChildren(h('p', { class: 'status' }, e.message)); }
 }
 
@@ -1482,8 +1526,9 @@ document.addEventListener('keydown', (e) => {
 function field(label, input, help) {
   return h('label', { class: 'field' }, h('span', {}, label), input, help ? h('small', {}, help) : null);
 }
-function topicSelect(value) {
-  const sel = h('select', {}, meta.topics.map((t) => h('option', { value: t.id }, t.name)));
+/** A topic dropdown limited to one kind: sources go in article topics, card types in card topics. */
+function topicSelect(value, kind) {
+  const sel = h('select', {}, meta.topics.filter((t) => t.kind === kind || t.id === value).map((t) => h('option', { value: t.id }, t.name)));
   sel.value = value;
   return sel;
 }
@@ -1584,22 +1629,32 @@ async function openPackPicker() {
 }
 
 function editTopic(t) {
-  // A new topic joins the bottom of the rank; reorder it on the Topics screen.
-  t ||= { name: '', color: '#64748b', curated_ratio: 0.5, enabled: true };
+  // A new topic joins the bottom of the rank; reorder it on the Topics screen. Its kind is fixed once created.
+  t ||= { name: '', color: '#64748b', kind: 'articles', enabled: true };
   const name = h('input', { type: 'text', value: t.name, placeholder: 'e.g. Chess' });
   const color = h('input', { type: 'color', value: t.color });
-  const rOut = h('b', {}, `${Math.round(t.curated_ratio * 100)}%`);
-  const ratio = h('input', { type: 'range', min: 0, max: 1, step: 0.05, value: t.curated_ratio, oninput: () => { rOut.textContent = `${Math.round(ratio.value * 100)}%`; } });
+  const KINDS = [['articles', 'Articles', 'Reading from sources you choose: RSS feeds, YouTube, Hacker News.'], ['cards', 'Practice cards', 'Flashcards, quizzes and prompts made from your own decks and lists.']];
+  let kind = t.kind;
+  const help = h('small', {}, KINDS.find((k) => k[0] === kind)[2]);
+  const kindField = t.id
+    ? field('Kind', h('div', { class: 'kind-fixed' }, KINDS.find((k) => k[0] === kind)[1]), 'A topic keeps its kind. To mix reading and practice, make two topics.')
+    : h('div', { class: 'field' }, h('span', {}, 'Kind'),
+      h('div', { class: 'seg inline', role: 'radiogroup', 'aria-label': 'Kind' }, KINDS.map(([k, label]) => h('button', {
+        type: 'button', role: 'radio', 'data-kind': k, 'aria-checked': String(k === kind), 'aria-pressed': String(k === kind),
+        onclick: (e) => {
+          kind = k; help.textContent = KINDS.find((x) => x[0] === k)[2];
+          e.currentTarget.parentNode.querySelectorAll('button').forEach((b) => { b.setAttribute('aria-pressed', String(b.dataset.kind === k)); b.setAttribute('aria-checked', String(b.dataset.kind === k)); });
+        },
+      }, label))), help);
   openSheet(t.id ? 'Edit topic' : 'New topic', h('div', {},
-    field('Name', name), field('Colour', color),
-    field(h('span', {}, 'Articles vs practice cards: ', rOut), ratio, 'Chance each slot is an article when unread articles exist; otherwise it is a practice card.'),
+    field('Name', name), kindField, field('Colour', color),
     h('div', { class: 'toolbar' },
-      h('button', { class: 'btn primary', onclick: () => name.value.trim() ? saveRow('topics', t, { name: name.value.trim(), color: color.value, curated_ratio: +ratio.value, enabled: t.enabled }) : toast('Name is required') }, 'Save'))));
+      h('button', { class: 'btn primary', onclick: () => name.value.trim() ? saveRow('topics', t, { name: name.value.trim(), color: color.value, enabled: t.enabled, ...(t.id ? {} : { kind }) }) : toast('Name is required') }, 'Save'))));
 }
 
 function editSource(s) {
   const name = h('input', { type: 'text', value: s.name || '', placeholder: 'e.g. r/learnpython' });
-  const topic = topicSelect(s.topic_id);
+  const topic = topicSelect(s.topic_id, 'articles');
   const kind = h('select', {}, Object.entries(meta.source_kinds).map(([k, v]) => h('option', { value: k }, v.label)));
   kind.value = s.kind;
   const include = h('input', { type: 'text', value: s.include || '', placeholder: 'e.g. LLM, transformer, Claude' });
@@ -1649,7 +1704,7 @@ function editGenerator(g) {
   // Editing a deck replaces the sheet, so the form is snapshotted and reopened with the chosen deck afterwards.
   const reopen = (deckId) => editGenerator({ ...g, topic_id: +topic.value, kind: kind.value, name: name.value, weight: +weight.value || 1, config: { ...form.read(), deck_id: deckId } });
   const onDeck = (d) => editDeck(d, { onDone: reopen, onBack: () => reopen(form.read().deck_id) });
-  const topic = topicSelect(g.topic_id);
+  const topic = topicSelect(g.topic_id, 'cards');
   const kind = h('select', {}, Object.entries(meta.generator_kinds).map(([k, v]) => h('option', { value: k }, v.label)));
   kind.value = g.kind;
   const name = h('input', { type: 'text', value: g.name || '' });

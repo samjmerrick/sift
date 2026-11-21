@@ -239,7 +239,19 @@ body.reading .toast { bottom: calc(env(safe-area-inset-bottom) + 16px); }
 /* balance */
 .stack { display: flex; height: 14px; border-radius: 999px; overflow: hidden; gap: 2px; margin: 4px 0 16px; background: var(--line); }
 .stack span { background: var(--c); min-width: 0; flex-basis: 0; transition: flex-grow .12s; }
-.seg.falloff { position: static; margin-bottom: 6px; }
+.seg.falloff, .seg.inline { position: static; margin-bottom: 6px; }
+.kind-fixed { font-weight: 600; padding: 2px 0; }
+
+/* ---------- feed type filter (All · Articles · Cards): sticky under the header, slides away while scrolling down ---------- */
+.typebar {
+  position: sticky; top: var(--topbar-h, calc(env(safe-area-inset-top) + 57px)); z-index: 9;
+  background: color-mix(in srgb, var(--bg) 88%, transparent); backdrop-filter: saturate(1.4) blur(12px); -webkit-backdrop-filter: saturate(1.4) blur(12px);
+  transition: transform .22s ease, opacity .22s ease, visibility 0s;
+}
+.typebar-in { max-width: 680px; margin: 0 auto; padding: 8px 12px 0; }
+.typebar .seg { position: static; margin-bottom: 0; }
+.typebar[data-hidden] { transform: translateY(-110%); opacity: 0; visibility: hidden; pointer-events: none; transition: transform .22s ease, opacity .22s ease, visibility 0s .22s; }
+@media (prefers-reduced-motion: reduce) { .typebar, .typebar[data-hidden] { transition: none; } }
 .help { color: var(--ink-3); font-size: 13px; margin: 0 4px 14px; }
 .section-h .grow { flex: 1; }
 .rank-status { text-transform: none; letter-spacing: 0; font-weight: 400; }

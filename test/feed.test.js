@@ -57,10 +57,37 @@ test('seen articles and disabled sources are excluded; reactions shift ranking',
 
 test('topic filter returns only that topic', async () => {
   const state = await loadState();
-  const ru = state.topics.find((t) => t.name === 'Russian').id;
+  const ru = state.topics.find((t) => t.name === 'Russian practice').id;
   const cards = buildFeed(state, { n: 10, topicId: ru });
   assert.ok(cards.length > 0);
   assert.ok(cards.every((c) => c.topic_id === ru));
+});
+
+test('article topics yield only articles and card topics only generated cards', async () => {
+  const state = await loadState();
+  const kind = new Map(state.topics.map((t) => [t.id, t.kind]));
+  const cards = buildFeed(state, { n: 30 });
+  assert.equal(cards.length, 30);
+  for (const c of cards) assert.equal(c.kind === 'article' ? 'articles' : 'cards', kind.get(c.topic_id), `${c.kind} card comes from a ${kind.get(c.topic_id)} topic`);
+  // An article topic with nothing unread is exhausted, not padded with cards.
+  const ai = state.topics.find((t) => t.name === 'AI').id;
+  const none = buildFeed({ ...state, items: [] }, { n: 10, topicIds: [ai] });
+  assert.equal(none.length, 0);
+});
+
+test('the type option restricts the feed to article topics or card topics', async () => {
+  const state = await loadState();
+  const articles = buildFeed(state, { n: 30, type: 'articles' });
+  assert.ok(articles.length > 0 && articles.every((c) => c.kind === 'article'));
+  const gen = buildFeed(state, { n: 30, type: 'cards' });
+  assert.equal(gen.length, 30);
+  assert.ok(gen.every((c) => c.kind !== 'article'));
+  const both = buildFeed(state, { n: 30, type: 'all' });
+  assert.ok(both.some((c) => c.kind === 'article') && both.some((c) => c.kind !== 'article'));
+  // combines with the topic filter
+  const russian = state.topics.find((t) => t.name === 'Russian practice').id;
+  assert.equal(buildFeed(state, { n: 5, type: 'articles', topicIds: [russian] }).length, 0);
+  assert.ok(buildFeed(state, { n: 5, type: 'cards', topicIds: [russian] }).every((c) => c.topic_id === russian));
 });
 
 test('spaced repetition: daily new limit, scheduling, relearn — persisted round trip', async () => {
@@ -100,7 +127,7 @@ test('spaced repetition: daily new limit, scheduling, relearn — persisted roun
 
 test('topicIds filters to several topics at once', async () => {
   const state = await loadState();
-  const ids = state.topics.filter((t) => ['Russian', 'Guitar'].includes(t.name)).map((t) => t.id);
+  const ids = state.topics.filter((t) => ['Russian practice', 'Guitar practice'].includes(t.name)).map((t) => t.id);
   const cards = buildFeed(state, { n: 30, topicIds: ids });
   assert.equal(cards.length, 30);
   assert.ok(cards.every((c) => ids.includes(c.topic_id)));

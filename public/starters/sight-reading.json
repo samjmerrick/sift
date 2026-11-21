@@ -5,8 +5,7 @@
   {
    "name": "Sight reading",
    "color": "#0d9488",
-   "curated_ratio": 0,
-   "sources": [],
+   "kind": "cards",
    "cards": [
     {
      "kind": "staff_notes",
