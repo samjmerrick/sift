@@ -4,6 +4,7 @@
 import postgres from 'postgres';
 import { createClient } from '@supabase/supabase-js';
 import { previewSource } from '../_shared/fetcher.js';
+import { getContent } from '../_shared/reader.js';
 import { fetchSource, fetchAll, enrichSummaries } from '../_shared/store.js';
 
 const cors = {
@@ -49,11 +50,18 @@ Deno.serve(async (req) => {
     const body = await req.json();
     switch (body.action) {
       case 'preview':
-        return json((await previewSource(body.source)).slice(0, 15));
+        return json((await previewSource(body.source)).slice(0, 15).map(({ content_html: _, ...rest }) => rest));
       case 'fetch_source': {
         const [src] = await sql`select * from sources where id = ${Number(body.id)}`;
         if (!src) return json({ error: 'Source not found' }, 404);
         return json(await fetchSource(sql, src));
+      }
+      case 'read': {
+        const id = Number(body.id);
+        if (!Number.isInteger(id)) return json({ error: 'Item not found' }, 404);
+        const [item] = await sql`select id, url, summary, comments_url, title from items where id = ${id}`;
+        if (!item) return json({ error: 'Item not found' }, 404);
+        return json(await getContent(sql, id));
       }
       case 'fetch_all':
         return json(await fetchAll(sql, { enrich: false }));

@@ -11,6 +11,7 @@ import { join, extname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import postgres from 'postgres';
 import { previewSource } from '../supabase/functions/_shared/fetcher.js';
+import { getContent } from '../supabase/functions/_shared/reader.js';
 import { fetchSource, fetchAll } from '../supabase/functions/_shared/store.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
@@ -124,7 +125,12 @@ const fakeSession = () => {
 };
 
 async function functions(res, body) {
-  if (body.action === 'preview') return send(res, 200, (await previewSource(body.source)).slice(0, 15));
+  if (body.action === 'preview') return send(res, 200, (await previewSource(body.source)).slice(0, 15).map(({ content_html, ...rest }) => rest));
+  if (body.action === 'read') {
+    const [item] = await sql`select id from items where id = ${Number(body.id)}`;
+    if (!item) return send(res, 404, { error: 'Item not found' });
+    return send(res, 200, await getContent(sql, item.id));
+  }
   if (body.action === 'fetch_source') {
     const [src] = await sql`select * from sources where id = ${Number(body.id)}`;
     return send(res, 200, await fetchSource(sql, src));

@@ -4,6 +4,7 @@ import { XMLParser } from 'fast-xml-parser';
 
 const UA = 'Sift/0.1 (self-hosted feed reader)';
 const DAY = 86400000;
+const FULL_TEXT_MIN = 1500;
 
 // ---------- text helpers ----------
 const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', hellip: '…', mdash: '—', ndash: '–', rsquo: '’', lsquo: '‘', rdquo: '”', ldquo: '“', laquo: '«', raquo: '»' };
@@ -102,13 +103,14 @@ export function parseFeed(body) {
   if (doc.rss || doc['rdf:RDF']) {
     const items = doc.rss ? arr(doc.rss.channel?.item) : arr(doc['rdf:RDF'].item);
     for (const it of items) {
-      const html = txt(it['content:encoded']) || txt(it.description);
+      const full = txt(it['content:encoded']);
+      const html = full || txt(it.description);
       const img = arr(it['media:thumbnail'])[0]?.['@url'] || arr(it['media:content']).find((m) => /image/.test(m?.['@type'] || 'image'))?.['@url']
         || arr(it.enclosure).find((e) => /^image\//.test(e?.['@type'] || ''))?.['@url'] || firstImage(html);
       out.push({
         title: txt(it.title), url: txt(it.link) || txt(it.guid), html,
         published: Date.parse(txt(it.pubDate) || txt(it['dc:date'])) || null, image: img || null,
-        comments_url: txt(it.comments) || null,
+        comments_url: txt(it.comments) || null, full,
       });
     }
   } else if (doc.feed) {
@@ -116,10 +118,11 @@ export function parseFeed(body) {
       const links = arr(e.link);
       const link = links.find((l) => !l['@rel'] || l['@rel'] === 'alternate') || links[0];
       const group = e['media:group'] || {};
-      const html = txt(e.content) || txt(e.summary) || txt(group['media:description']);
+      const full = txt(e.content);
+      const html = full || txt(e.summary) || txt(group['media:description']);
       out.push({
         title: txt(e.title), url: link?.['@href'] || txt(e.id), html,
-        published: Date.parse(txt(e.published) || txt(e.updated)) || null,
+        published: Date.parse(txt(e.published) || txt(e.updated)) || null, full,
         image: arr(group['media:thumbnail'])[0]?.['@url'] || arr(e['media:thumbnail'])[0]?.['@url'] || firstImage(html) || null,
       });
     }
@@ -145,7 +148,9 @@ async function fetchRss(cfg) {
     .map((i) => {
       const summary = truncate(htmlToText(i.html));
       // Link aggregators (Lobsters etc.) put only a "Comments" link in the description: leave it empty so the page's own description is used.
-      return { title: htmlToText(i.title), url: i.url, summary: /^comments$/i.test(summary) ? '' : summary, image: i.image, published: i.published || Date.now(), comments_url: i.comments_url };
+      // Full-text feeds: keep the body (only when it is long enough to be an article) so it can be stored for the reader.
+      const content_html = i.full && htmlToText(i.full).length >= FULL_TEXT_MIN ? i.full : null;
+      return { title: htmlToText(i.title), url: i.url, summary: /^comments$/i.test(summary) ? '' : summary, image: i.image, published: i.published || Date.now(), comments_url: i.comments_url, content_html };
     });
 }
 
