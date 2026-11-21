@@ -8,24 +8,6 @@ export function sharesFromWeights(weights) {
   return weights.map((w) => (Math.max(0, w) / total) * 100);
 }
 
-/**
- * Set one topic's share and spread the difference over the unlocked others in proportion to what they have now.
- * `locked` is an array of booleans. The topic can't take more than 100 minus the locked shares.
- */
-export function setShare(shares, locked, index, value) {
-  const out = shares.slice();
-  const lockedSum = out.reduce((s, v, i) => s + (i !== index && locked[i] ? v : 0), 0);
-  const others = out.map((_, i) => i).filter((i) => i !== index && !locked[i]);
-  const max = others.length ? 100 - lockedSum : out[index];
-  const v = Math.min(Math.max(0, Number(value) || 0), Math.max(0, max));
-  out[index] = v;
-  if (!others.length) return out;
-  const rest = 100 - lockedSum - v;
-  const current = others.reduce((s, i) => s + out[i], 0);
-  for (const i of others) out[i] = current > 0 ? (out[i] / current) * rest : rest / others.length;
-  return out;
-}
-
 /** Round shares to whole percentages that still add up to exactly 100 (largest remainder). */
 export function toPercents(shares) {
   const floors = shares.map((s) => Math.floor(s + 1e-9));
@@ -35,5 +17,33 @@ export function toPercents(shares) {
   return floors;
 }
 
-/** Percentages → the `weight` stored on each topic (100% across all topics = a total weight of 10). */
-export const weightFromPercent = (pct) => Math.round(pct * 10) / 100;
+/** Falloff presets: each step down the rank multiplies a topic's weight by `ratio`. */
+export const FALLOFFS = [['even', 'Even', 1], ['gentle', 'Gentle', 0.9], ['smooth', 'Smooth', 0.8], ['steep', 'Steep', 0.7]];
+export const DEFAULT_FALLOFF = 0.8;
+
+/** Weights for `n` ranked topics: rank 0 gets 2, each next rank is `ratio` times the one above. */
+export function rankWeights(n, ratio) {
+  const r = Math.min(1, Math.max(0.1, Number(ratio) || DEFAULT_FALLOFF));
+  return Array.from({ length: n }, (_, i) => Math.round(2 * r ** i * 1e4) / 1e4);
+}
+
+/**
+ * `ordered` is every topic in rank order, visible ones first (hidden ones after). Returns the changes needed so
+ * visible topics sit at positions 0..n-1 with weights from `ratio`, and hidden ones follow: [{ id, position?, weight? }].
+ */
+export function rankPatches(ordered, ratio) {
+  const visible = ordered.filter((t) => t.enabled);
+  const weights = rankWeights(visible.length, ratio);
+  const patches = [];
+  ordered.forEach((t, i) => {
+    const patch = {};
+    if (t.position !== i) patch.position = i;
+    const w = t.enabled ? weights[i] : null;
+    if (w != null && Math.abs(Number(t.weight) - w) > 1e-6) patch.weight = w;
+    if (Object.keys(patch).length) patches.push({ id: t.id, ...patch });
+  });
+  return patches;
+}
+
+/** Rank order from stored positions: visible topics first, then hidden, each by position then id. */
+export const rankOrder = (topics) => topics.slice().sort((a, b) => (b.enabled - a.enabled) || (a.position - b.position) || (a.id - b.id));

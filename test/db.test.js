@@ -74,3 +74,19 @@ test('domain_stats counts items per domain and flags muted ones, including muted
 test('anonymous role cannot read domain_stats', async () => {
   await assert.rejects(sql.begin(async (tx) => { await tx`set local role anon`; await tx`select * from domain_stats`; }), /permission denied/);
 });
+
+test('app_settings: owner can read and write, a stranger and anon cannot', async () => {
+  const stranger = '00000000-0000-0000-0000-0000000000ff';
+  await asUser(sql, async (tx) => {
+    await tx`insert into app_settings (key, value) values ('falloff', '0.8'::jsonb)`;
+    await tx`update app_settings set value = '0.7'::jsonb where key = 'falloff'`;
+    const [row] = await tx`select value from app_settings where key = 'falloff'`;
+    assert.equal(row.value, 0.7);
+  });
+  await asUser(sql, async (tx) => {
+    assert.equal((await tx`select * from app_settings`).length, 0, 'stranger sees nothing');
+    assert.equal((await tx`update app_settings set value = '1'::jsonb returning key`).length, 0);
+  }, stranger);
+  await assert.rejects(asUser(sql, (tx) => tx`insert into app_settings (key, value) values ('x', '1'::jsonb)`, stranger), /row-level security/);
+  await assert.rejects(sql.begin(async (tx) => { await tx`set local role anon`; await tx`select * from app_settings`; }), /permission denied/);
+});

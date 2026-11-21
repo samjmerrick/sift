@@ -387,7 +387,6 @@
   {
    "name": "Machine learning",
    "color": "#c026d3",
-   "weight": 2,
    "curated_ratio": 1,
    "sources": [
     {
@@ -484,7 +483,6 @@
   {
    "name": "ML concepts",
    "color": "#a21caf",
-   "weight": 1.5,
    "curated_ratio": 0.4,
    "sources": [
     {

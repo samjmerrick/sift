@@ -85,6 +85,16 @@ export function createData(client) {
       return check(await client.from('cards').select('id, front, back, note, due, reps, interval_days').eq('deck_id', deckId).order('position'))
         .map((c) => ({ ...c, due: ms(c.due) }));
     },
+    /** App-wide setting from `app_settings` (the fallback when the key has never been saved). */
+    async setting(key, fallback) {
+      const [row] = check(await client.from('app_settings').select('value').eq('key', key));
+      return row ? row.value : fallback;
+    },
+    async setSetting(key, value) {
+      const [row] = check(await client.from('app_settings').select('key').eq('key', key));
+      if (row) check(await client.from('app_settings').update({ value }).eq('key', key));
+      else check(await client.from('app_settings').insert({ key, value }));
+    },
     async insert(table, row) { return check(await client.from(table).insert(row).select().single()); },
     async update(table, id, patch) { check(await client.from(table).update(patch).eq('id', id)); },
     async remove(table, id) { check(await client.from(table).delete().eq('id', id)); },
