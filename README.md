@@ -42,7 +42,7 @@ Everything is edited in the app under **Settings**, with no code changes or rede
 
 The feed has a **topic filter** (the button at the top right): search, tick any combination of topics, then apply. Your choice is remembered on that device.
 
-While reading, tap **⋯** on an article (or its source name) to change what you see for good: hide the source, hide the site's domain (useful for Hacker News), show less or more from the source, hide the topic, or edit the source. Each hide offers Undo. Muted domains are listed under Settings, next to Sign out.
+While reading, tap **⋯** on an article (or its source name) to change what you see for good: hide the source, hide the site's domain (useful for Hacker News), show less or more from the source, hide the topic, or edit the source. Practice cards have it too: hide or rebalance a card type, hide its topic, or edit it. Each hide offers Undo. Muted domains are listed under Settings, next to Sign out.
 
 Tapping an article's title opens it **in Sift**, in the app's own colours and fonts (dark mode included), with adjustable text size. YouTube videos play in place. If a page can't be read (paywalls, JavaScript-only sites), you get a button to open the original. Long-press a title to open the original directly.
 
