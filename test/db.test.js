@@ -47,3 +47,30 @@ test('owner can use tables, views and feed_state', async () => {
     assert.equal(sources.length, 1);
   });
 });
+
+test('domain_stats counts items per domain and flags muted ones, including muted domains with no items', async () => {
+  await asUser(sql, async (tx) => {
+    const [topic] = await tx`insert into topics (name) values ('Domains') returning id`;
+    const [src] = await tx`insert into sources (topic_id, kind, name, config) values (${topic.id}, 'rss', 'D', '{"url":"https://example.com/d"}') returning id`;
+    const add = (n, domain, extra = {}) => tx`insert into items (source_id, topic_id, url, title, title_key, domain, published_at, seen_at, reaction)
+      values (${src.id}, ${topic.id}, ${`https://${domain}/${n}`}, ${`t${n}`}, ${`t${n}`}, ${domain}, now() - ${`${n} hours`}::interval, ${extra.seen ? new Date() : null}, ${extra.reaction ?? 0})`;
+    await add(1, 'a.example'); await add(2, 'a.example', { seen: true, reaction: 1 }); await add(3, 'a.example', { reaction: -1 });
+    await add(4, 'b.example'); await add(5, 'c.example');
+    await tx`insert into items (source_id, topic_id, url, title, title_key, published_at) values (${src.id}, ${topic.id}, 'https://nodomain/1', 'nd', 'nd', now())`;
+    await tx`insert into muted_domains (domain) values ('b.example'), ('ghost.example')`;
+    const rows = Object.fromEntries((await tx`select * from domain_stats order by total desc, domain`).map((r) => [r.domain, r]));
+    assert.deepEqual(Object.keys(rows).sort(), ['a.example', 'b.example', 'c.example', 'ghost.example']);
+    const a = rows['a.example'];
+    assert.deepEqual([a.total, a.unread, a.up, a.down, a.muted].map(Number), [3, 2, 1, 1, 0]);
+    assert.ok(a.last_published, 'last published is set');
+    assert.equal(rows['b.example'].muted, true);
+    assert.equal(rows['c.example'].muted, false);
+    assert.deepEqual([rows['ghost.example'].total, rows['ghost.example'].unread].map(Number), [0, 0]);
+    assert.equal(rows['ghost.example'].last_published, null);
+    assert.equal(rows['ghost.example'].muted, true);
+  });
+});
+
+test('anonymous role cannot read domain_stats', async () => {
+  await assert.rejects(sql.begin(async (tx) => { await tx`set local role anon`; await tx`select * from domain_stats`; }), /permission denied/);
+});

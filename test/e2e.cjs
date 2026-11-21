@@ -231,6 +231,26 @@ const pickTopics = async (p, names) => {
   const [offAfter] = await sql`select count(*)::int n from sources where id = any(${hackerIds}) and not enabled`;
   assert(offAfter.n === 0, 'bulk turn on restores them');
 
+  console.log('domains');
+  await p.click('.seg button:has-text("Domains")');
+  await p.waitForSelector('.row[data-domain="sample.test"]');
+  const domDesc = await p.textContent('.row[data-domain="sample.test"] .desc');
+  assert(/\d+ unread · 4 total · 👍\d+ 👎\d+/.test(domDesc), `domains tab lists a domain with counts (${domDesc})`);
+  await shot('domains');
+  await p.click('button[aria-label="Mute sample.test"]');
+  await p.waitForSelector('button[aria-label="Unmute sample.test"]');
+  assert((await sql`select count(*)::int n from muted_domains where domain = 'sample.test'`)[0].n === 1, 'muting a domain is stored');
+  await p.click('.bulk-chips .chip:has-text("Muted")');
+  assert((await p.$$('.row[data-domain]')).length === 1, 'the Muted filter lists only muted domains');
+  await p.fill('.bulk-search', 'nothing-like-this');
+  await p.waitForSelector('text=No domains match.');
+  await p.fill('.bulk-search', '');
+  await p.click('button[aria-label="Unmute sample.test"]');
+  await p.waitForSelector('.empty:has-text("No domains match")');
+  assert((await sql`select count(*)::int n from muted_domains`)[0].n === 0, 'unmuting a domain is stored');
+  assert((await p.$$('button:has-text("Muted domains")')).length === 0, 'the old Muted domains footer button is gone');
+  await p.click('.bulk-chips .chip:has-text("All")');
+
   console.log('decks from the card type editor');
   assert((await p.$$('.seg button:has-text("Decks")')).length === 0, 'there is no separate Decks tab');
   await p.click('.seg button:has-text("Cards")');

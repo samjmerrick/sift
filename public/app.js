@@ -826,24 +826,6 @@ async function openCardTypeSheet(c) {
     : h('div', { class: 'list' }, [h('p', { class: 'sub' }, 'This card type no longer exists.'), topicRow]));
 }
 
-async function openMutedSheet() {
-  const box = h('div', {}, h('p', { class: 'sub' }, 'Loading…'));
-  openSheet('Muted domains', box);
-  const count = (n) => { const b = $('#muted-btn'); if (b) b.textContent = `Muted domains (${n})`; };
-  const draw = (list) => {
-    count(list.length);
-    box.replaceChildren(list.length
-      ? h('div', { class: 'list' }, list.map((d) => h('div', { class: 'row row-static' },
-        h('div', { class: 'grow' }, h('div', { class: 'title' }, d.domain)),
-        h('button', {
-          class: 'btn', 'aria-label': `Unmute ${d.domain}`,
-          onclick: async () => { try { await data.unmuteDomain(d.domain); feed.dirty = true; draw(list.filter((x) => x !== d)); } catch (e) { fail(e); } },
-        }, 'Unmute'))))
-      : h('div', { class: 'empty' }, h('h3', {}, 'Nothing muted'), h('p', {}, 'Use ⋯ on an article to stop seeing links to a site.')));
-  };
-  try { draw(await data.mutedDomains()); } catch (e) { box.replaceChildren(h('p', { class: 'status' }, e.message)); }
-}
-
 // ---------- reader ----------
 const READER_SIZES = [17, 19, 21, 24]; // px; index 1 is the default
 const readCache = new Map(); // item_id -> successful `read` result, for this session
@@ -1000,7 +982,7 @@ async function renderSaved() {
 }
 
 // ---------- settings ----------
-const TABS = [['topics', 'Topics'], ['balance', 'Balance'], ['sources', 'Sources'], ['cards', 'Cards']];
+const TABS = [['topics', 'Topics'], ['balance', 'Balance'], ['sources', 'Sources'], ['domains', 'Domains'], ['cards', 'Cards']];
 
 let settingsTab = null;
 async function renderSettings(tab = 'sources') {
@@ -1009,10 +991,7 @@ async function renderSettings(tab = 'sources') {
   await loadMeta().catch(() => {});
   const seg = h('div', { class: 'seg', role: 'tablist' }, TABS.map(([k, label]) => h('button', { 'aria-pressed': String(k === tab), onclick: () => { location.hash = `#/settings/${k}`; } }, label)));
   const body = h('div');
-  const mutedBtn = h('button', { class: 'btn', id: 'muted-btn', onclick: openMutedSheet }, 'Muted domains');
-  data.mutedDomains().then((list) => { mutedBtn.textContent = `Muted domains (${list.length})`; }).catch(() => {});
   const footer = h('div', { class: 'toolbar', style: { justifyContent: 'center', marginTop: '32px' } },
-    mutedBtn,
     h('button', { class: 'btn', onclick: async () => { await data.signOut(); location.reload(); } }, 'Sign out'));
   view.replaceChildren(seg, body, footer);
   try { await SETTINGS[tab](body); } catch (e) { body.replaceChildren(h('p', { class: 'status' }, e.message)); }
@@ -1205,6 +1184,7 @@ function manage(body, spec) {
   paint();
 }
 
+const domainsUi = { q: '', status: 'all' }; // Settings → Domains search and filter, kept across rerenders
 const SETTINGS = {
   async topics(body) {
     const topics = await data.topics();
@@ -1351,6 +1331,37 @@ const SETTINGS = {
       },
     }, 'Fetch all now');
     body.append(h('div', { class: 'toolbar' }, fetchBtn));
+  },
+  async domains(body) {
+    const domains = await data.domainStats();
+    const ui = domainsUi;
+    body.append(h('p', { class: 'intro' }, 'Sites your articles link to. Mute a domain to stop seeing it; its articles are kept, just hidden.'));
+    const search = h('input', { type: 'search', class: 'bulk-search', placeholder: 'Search domains', 'aria-label': 'Search domains', autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false' });
+    search.value = ui.q;
+    const chips = [['all', 'All'], ['muted', 'Muted']].map(([k, label]) => { const b = h('button', { class: 'chip', onclick: () => { ui.status = k; draw(); } }, label); b.dataset.status = k; return b; });
+    const count = h('span', { class: 'bulk-count', role: 'status' });
+    const list = h('div', { class: 'bulk-list' });
+    search.addEventListener('input', () => { ui.q = search.value; draw(); });
+    body.append(h('div', { class: 'bulk-toolbar' }, h('div', { class: 'bulk-top' }, search), h('div', { class: 'bulk-chips', role: 'group', 'aria-label': 'Filters' }, chips),
+      h('div', { class: 'bulk-countrow' }, count)), list);
+    const LIMIT = 200;
+    function draw() {
+      const q = ui.q.trim().toLowerCase();
+      const rows = domains.filter((d) => (ui.status === 'all' || d.muted) && (!q || d.domain.includes(q)));
+      chips.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.status === ui.status)));
+      count.textContent = `${rows.length} of ${domains.length} domains`;
+      list.replaceChildren(rows.length ? h('div', { class: 'list' }, rows.slice(0, LIMIT).map((d) => h('div', { class: `row row-static${d.muted ? ' off' : ''}`, 'data-domain': d.domain },
+        h('div', { class: 'grow' }, h('div', { class: 'title' }, d.domain),
+          h('div', { class: 'desc' }, `${d.unread} unread · ${d.total} total · 👍${d.up} 👎${d.down}${d.muted ? ' · muted' : ''}`)),
+        h('button', {
+          class: 'btn', 'aria-label': `${d.muted ? 'Unmute' : 'Mute'} ${d.domain}`,
+          onclick: async () => {
+            try { await (d.muted ? data.unmuteDomain(d.domain) : data.muteDomain(d.domain)); d.muted = !d.muted; feed.dirty = true; draw(); } catch (e) { fail(e); }
+          },
+        }, d.muted ? 'Unmute' : 'Mute'))).concat(rows.length > LIMIT ? [h('div', { class: 'row row-static' }, h('div', { class: 'desc' }, `Showing the first ${LIMIT}. Search to narrow the list.`))] : []))
+        : h('div', { class: 'empty small' }, h('p', {}, domains.length ? 'No domains match.' : 'No domains yet. They appear once articles have been fetched.')));
+    }
+    draw();
   },
   async cards(body) {
     const gens = await data.generators();

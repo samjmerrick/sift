@@ -36,13 +36,14 @@ Everything is edited in the app under **Settings**, with no code changes or rede
 | Topics | Name, colour, and how often a slot is an article rather than a practice card. |
 | Balance | The share of the feed each topic gets, as percentages that always add up to 100%. Moving one slider moves the others in proportion; lock a topic to hold its share. |
 | Sources | Where articles come from, with include/exclude keywords, a minimum score (Hacker News), a maximum age, and a weight. **Preview** shows what a source would give you before you save it. |
+| Domains | Every site your articles link to, with unread, total and 👍/👎 counts. Mute or unmute a domain; muted ones are hidden from the feed but their articles are kept. |
 | Card types | Which practice cards each topic gets, and their settings. Decks live here too: a *Flashcards* or *Notes* card type has a deck picker with **+ New deck** and **Edit deck** (paste lines of `front, back, note`). |
 
 ### Choosing what you see
 
 The feed has a **topic filter** (the button at the top right): search, tick any combination of topics, then apply. Your choice is remembered on that device.
 
-While reading, tap **⋯** on an article (or its source name) to change what you see for good: hide the source, hide the site's domain (useful for Hacker News), show less or more from the source, hide the topic, or edit the source. Practice cards have it too: hide or rebalance a card type, hide its topic, or edit it. Each hide offers Undo. Muted domains are listed under Settings, next to Sign out.
+While reading, tap **⋯** on an article (or its source name) to change what you see for good: hide the source, hide the site's domain (useful for Hacker News), show less or more from the source, hide the topic, or edit the source. Practice cards have it too: hide or rebalance a card type, hide its topic, or edit it. Each hide offers Undo. Muted domains are listed under Settings → Domains.
 
 Tapping an article's title opens it **in Sift**, in the app's own colours and fonts (dark mode included), with adjustable text size. YouTube videos play in place. If a page can't be read (paywalls, JavaScript-only sites), you get a button to open the original. Long-press a title to open the original directly.
 
