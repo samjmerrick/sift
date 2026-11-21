@@ -143,6 +143,25 @@ const pickTopics = async (p, group) => {
   await p.click('.reader-back');
   await p.waitForSelector('.feed .card');
 
+  console.log('card type menu');
+  await p.waitForSelector('.card[data-generator]');
+  const genId = await p.$eval('.card[data-generator]', (el) => el.dataset.generator);
+  const [w0] = await sql`select weight from generators where id = ${genId}`;
+  await p.click(`.card[data-generator="${genId}"] .act.more`);
+  await p.click('#sheet .row:has-text("Show less of this card type")');
+  await p.waitForSelector('.toast.show:has-text("Less")');
+  await p.waitForTimeout(300);
+  const [w1] = await sql`select weight from generators where id = ${genId}`;
+  assert(Number(w1.weight) < Number(w0.weight), 'show less lowers the card type weight');
+  await p.click(`.card[data-generator="${genId}"] .act.more`);
+  await p.click('#sheet .row:has-text("Hide card type")');
+  await p.waitForSelector('.toast.show:has-text("Hidden")');
+  assert((await p.$$(`.card[data-generator="${genId}"]`)).length === 0, 'hiding a card type clears its cards at once');
+  assert((await sql`select enabled from generators where id = ${genId}`)[0].enabled === false, 'card type disabled in the DB');
+  await p.click('.toast button:has-text("Undo")');
+  await p.waitForTimeout(400);
+  assert((await sql`select enabled from generators where id = ${genId}`)[0].enabled === true, 'undo re-enables the card type');
+
   console.log('settings');
   await p.click('a[data-tab=settings]');
   await p.waitForSelector('.row');
