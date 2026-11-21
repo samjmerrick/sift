@@ -11,13 +11,13 @@ const BASE = process.env.BASE_URL || 'http://localhost:5173';
 const OUT = process.argv[2];
 const sql = postgres(process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/sift_dev', { onnotice: () => {} });
 const assert = (cond, msg) => { if (!cond) throw new Error(`FAILED: ${msg}`); console.log(`  ✓ ${msg}`); };
-// Filter the feed through the topic picker: one category group, or everything when `group` is null.
-const pickTopics = async (p, group) => {
+// Filter the feed through the topic picker: tick the named topics, or everything when `names` is null.
+const pickTopics = async (p, names) => {
   await p.click('#topics-btn');
   await p.waitForSelector('.pick-quick');
-  if (group) {
+  if (names) {
     await p.click('.pick-quick .chip:has-text("Clear")');
-    await p.click(`.pick-group:has-text("${group}") button.link`);
+    for (const n of [].concat(names)) await p.check(`.row.pick:has(.title:text-is("${n}")) input.tick`);
   } else await p.click('.pick-quick .chip:has-text("Select all")');
   await p.click('.pick-foot .btn.primary');
   await p.waitForSelector('#sheet', { state: 'hidden' });
@@ -91,7 +91,7 @@ const pickTopics = async (p, group) => {
   assert(count >= 40, `infinite scroll keeps loading (${count} cards)`);
   assert(kinds.has('article') && kinds.has('flashcard') && kinds.size >= 6, `mixes card kinds: ${[...kinds].join(', ')}`);
 
-  await pickTopics(p, 'Languages');
+  await pickTopics(p, 'Russian');
   await p.waitForSelector('.k-flashcard .reveal');
   await p.click('.k-flashcard .reveal');
   await p.click('.k-flashcard .grade .good');
@@ -243,7 +243,7 @@ const pickTopics = async (p, group) => {
   await shot('decks');
 
   await p.click('a[data-tab=feed]');
-  await pickTopics(p, 'Other');
+  await pickTopics(p, 'Chess');
   await p.waitForSelector('.k-prompt');
   assert(true, 'new topic and card type appear in the feed');
 

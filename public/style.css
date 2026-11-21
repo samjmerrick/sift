@@ -222,9 +222,6 @@ body.reading .toast { bottom: calc(env(safe-area-inset-bottom) + 16px); }
 
 /* topic picker */
 .pick-quick { display: flex; gap: 8px; margin: 0 0 4px; }
-.pick-group { display: flex; align-items: baseline; gap: 8px; font-size: 13px; font-weight: 600; color: var(--ink-2); margin: 16px 4px 8px; text-transform: uppercase; letter-spacing: .05em; }
-.pick-group small { font-weight: 400; color: var(--ink-3); letter-spacing: 0; }
-.pick-group .link { margin-left: auto; }
 .link { border: 0; background: none; color: var(--accent); font: inherit; cursor: pointer; padding: 0; text-transform: none; letter-spacing: 0; }
 .row.pick { cursor: pointer; }
 .tick { appearance: none; -webkit-appearance: none; flex: none; width: 24px; height: 24px; margin: 0; border-radius: 50%; border: 1.5px solid var(--ink-3); display: grid; place-items: center; cursor: pointer; }
@@ -236,9 +233,6 @@ body.reading .toast { bottom: calc(env(safe-area-inset-bottom) + 16px); }
 /* balance */
 .stack { display: flex; height: 14px; border-radius: 999px; overflow: hidden; gap: 2px; margin: 4px 0 16px; background: var(--line); }
 .stack span { background: var(--c); min-width: 0; flex-basis: 0; transition: flex-grow .12s; }
-.bal-group { display: flex; align-items: center; gap: 10px; margin: 18px 4px 8px; font-size: 13px; font-weight: 600; color: var(--ink-2); text-transform: uppercase; letter-spacing: .05em; }
-.bal-group b { font-variant-numeric: tabular-nums; min-width: 3ch; }
-.bal-group input[type=range] { flex: 1; min-width: 0; }
 .bal-row { padding: 10px 14px 6px; border-top: 1px solid var(--line); }
 .bal-row:first-child { border-top: 0; }
 .bal-top { display: flex; align-items: center; gap: 10px; }
@@ -249,8 +243,7 @@ body.reading .toast { bottom: calc(env(safe-area-inset-bottom) + 16px); }
 .act.lock { height: 32px; min-width: 32px; padding: 0; }
 .act.lock svg { width: 18px; height: 18px; }
 .act.lock[aria-pressed="true"] { color: var(--ink); background: var(--surface-2); }
-.bal-row input[type=range], .bal-group input[type=range] { width: 100%; accent-color: var(--accent); margin: 4px 0 2px; }
-.bal-row input[type=range]:disabled { opacity: .4; }
+.bal-row input[type=range], .bal-row input[type=range]:disabled { opacity: .4; }
 
 /* ---------- bulk management (settings lists) ---------- */
 .row.off .title { color: var(--ink-3); }

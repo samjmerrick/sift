@@ -5,7 +5,7 @@ import { GENERATOR_KINDS, scheduleReview, applyReviewToDeck } from './lib/genera
 import { SOURCE_KINDS } from './lib/source-kinds.js';
 import { installPack } from './lib/packs.js';
 import { STAFF, keySigSteps } from './lib/theory.js';
-import { sharesFromWeights, setShare, setGroupShare, toPercents, weightFromPercent } from './lib/balance.js';
+import { sharesFromWeights, setShare, toPercents, weightFromPercent } from './lib/balance.js';
 import { sanitiseHtml } from './lib/sanitise.js';
 
 // ---------- utilities ----------
@@ -140,22 +140,11 @@ async function hardReload() {
 }
 
 // ---------- topic filter: quick chips + a full picker ----------
-// The filter is a set of topic ids; an empty set means "all topics". Topics can carry a category (Music, News, …),
-// and when any do, the chip row shows one chip per category instead of one per topic.
+// The filter is a set of topic ids; an empty set means "all topics".
 const loadFilter = () => { const v = store.get('filter', null); return new Set(Array.isArray(v) ? v : v ? [v] : []); };
 let filter = loadFilter();
 const sameSet = (a, b) => a.size === b.size && [...a].every((x) => b.has(x));
 const enabledTopics = () => meta.topics.filter((t) => t.enabled);
-/** Group topics by category, in order of first appearance, with uncategorised topics last. */
-function topicGroups(topics = enabledTopics()) {
-  const map = new Map();
-  for (const t of topics) {
-    const k = (t.category || '').trim();
-    if (!map.has(k)) map.set(k, []);
-    map.get(k).push(t);
-  }
-  return [...map].map(([raw, ts]) => ({ raw, name: raw || 'Other', topics: ts })).sort((a, b) => (a.raw === '') - (b.raw === ''));
-}
 function setFilter(ids) {
   filter = new Set(ids);
   store.set('filter', [...filter]);
@@ -183,21 +172,13 @@ function openTopicPicker() {
   };
   const draw = () => {
     const q = search.value.trim().toLowerCase();
-    const groups = topicGroups(topics).map((g) => ({ ...g, shown: g.topics.filter((t) => !q || `${t.name} ${g.name}`.toLowerCase().includes(q)) })).filter((g) => g.shown.length);
-    list.replaceChildren(...(groups.length ? groups.flatMap((g) => {
-      const ids = g.topics.map((t) => t.id);
-      const on = ids.filter((id) => draft.has(id)).length;
-      return [
-        h('div', { class: 'pick-group' }, h('span', {}, g.name), h('small', {}, `${on}/${ids.length}`),
-          h('button', { class: 'link', onclick: () => { if (on === ids.length) ids.forEach((id) => draft.delete(id)); else ids.forEach((id) => draft.add(id)); draw(); } }, on === ids.length ? 'None' : 'All')),
-        h('div', { class: 'list' }, g.shown.map((t) => {
-          const box = h('input', { type: 'checkbox', class: 'tick', onchange: (e) => { if (e.target.checked) draft.add(t.id); else draft.delete(t.id); draw(); } });
-          box.checked = draft.has(t.id);
-          return h('label', { class: 'row pick' }, h('span', { class: 'dot', style: { '--c': t.color } }),
-            h('div', { class: 'grow' }, h('div', { class: 'title' }, t.name), h('div', { class: 'desc' }, `${Math.round((t.weight / total) * 100)}% of feed`)), box);
-        })),
-      ];
-    }) : [h('p', { class: 'status' }, 'No topics match.')]));
+    const shown = topics.filter((t) => !q || t.name.toLowerCase().includes(q));
+    list.replaceChildren(shown.length ? h('div', { class: 'list' }, shown.map((t) => {
+      const box = h('input', { type: 'checkbox', class: 'tick', onchange: (e) => { if (e.target.checked) draft.add(t.id); else draft.delete(t.id); draw(); } });
+      box.checked = draft.has(t.id);
+      return h('label', { class: 'row pick' }, h('span', { class: 'dot', style: { '--c': t.color } }),
+        h('div', { class: 'grow' }, h('div', { class: 'title' }, t.name), h('div', { class: 'desc' }, `${Math.round((t.weight / total) * 100)}% of feed`)), box);
+    })) : h('p', { class: 'status' }, 'No topics match.'));
     sync();
   };
   search.oninput = draw;
@@ -1056,7 +1037,7 @@ h('div', { class: 'grow' }, h('div', { class: 'title' }, title), desc ? h('div',
 
 // ---------- bulk management (search, filters, collapsible groups, multi-select) ----------
 const BULK = {}; // per-tab UI state; survives rerender() so filters and search stay put
-const bulkState = (tab) => (BULK[tab] ||= { q: '', topic: '', kind: '', category: '', status: 'all', select: false, sel: new Set() });
+const bulkState = (tab) => (BULK[tab] ||= { q: '', topic: '', kind: '', status: 'all', select: false, sel: new Set() });
 const plural = (n, [one, many]) => `${n} ${n === 1 ? one : many}`;
 const tick = (on) => h('span', { class: `tk${on ? ' on' : ''}`, 'aria-hidden': 'true' });
 
@@ -1077,14 +1058,13 @@ function manage(body, spec) {
   const st = bulkState(spec.tab);
   const { items, noun } = spec;
   const statuses = [['all', 'All', () => true], ...spec.statuses];
-  const filterActive = () => !!(st.q.trim() || st.topic || st.kind || st.category || st.status !== 'all');
+  const filterActive = () => !!(st.q.trim() || st.topic || st.kind || st.status !== 'all');
   let session = {}; // collapse overrides made while a filter is active; reset whenever the filters change
   const collapsedKey = `collapsed:${spec.tab}`;
 
   const matches = (it) => {
     if (st.topic && it.topic_id !== +st.topic) return false;
     if (st.kind && it.kind !== st.kind) return false;
-    if (st.category && (it.category || '') !== st.category) return false;
     if (!statuses.find(([k]) => k === st.status)[2](it)) return false;
     const hay = `${spec.search(it)} ${spec.grouped ? topicById(it.topic_id).name : ''}`.toLowerCase();
     return st.q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w));
@@ -1101,10 +1081,8 @@ function manage(body, spec) {
     (v) => { st.topic = v; filtersChanged(); })) : null;
   const kindChip = spec.kinds ? chip(() => pickerSheet('Filter by type', [['', 'All types'], ...Object.entries(spec.kinds).map(([k, v]) => [k, v.label])], st.kind,
     (v) => { st.kind = v; filtersChanged(); })) : null;
-  const catChip = spec.hasCategory ? chip(() => pickerSheet('Filter by category', [['', 'All categories'], ...[...new Set(items.map((t) => t.category).filter(Boolean))].sort().map((c) => [c, c])], st.category,
-    (v) => { st.category = v; filtersChanged(); })) : null;
   const statusChips = statuses.map(([k, label]) => { const b = chip(() => { st.status = k; filtersChanged(); }); b.textContent = label; b.dataset.status = k; return b; });
-  const chipsRow = h('div', { class: 'bulk-chips', role: 'group', 'aria-label': 'Filters' }, topicChip, kindChip, catChip, statusChips);
+  const chipsRow = h('div', { class: 'bulk-chips', role: 'group', 'aria-label': 'Filters' }, topicChip, kindChip, statusChips);
   const count = h('span', { class: 'bulk-count', role: 'status' });
   const selAll = h('button', { class: 'linkbtn', onclick: () => { shown().forEach((it) => st.sel.add(it.id)); paint(); } }, 'Select all shown');
   const selNone = h('button', { class: 'linkbtn', onclick: () => { st.sel.clear(); paint(); } }, 'Clear');
@@ -1155,8 +1133,7 @@ function manage(body, spec) {
       }),
     });
   }
-  // Groups default to topics; a spec can supply its own (Topics groups by category).
-  const groupDefs = () => (spec.groups ? spec.groups(items) : meta.topics.map((t) => ({ id: t.id, name: t.name, color: t.color, test: (x) => x.topic_id === t.id })));
+  const groupDefs = () => (meta.topics.map((t) => ({ id: t.id, name: t.name, color: t.color, test: (x) => x.topic_id === t.id })));
   const addRowEl = (a) => (!st.select && a && !filterActive() ? rowEl({ title: h('span', { class: 'add-row' }, a.label), onclick: a.onclick }) : null);
 
   function groupEl(t, rows) {
@@ -1197,7 +1174,6 @@ function manage(body, spec) {
     const setChip = (el, label, on) => { if (el) { el.textContent = `${label} ▾`; el.setAttribute('aria-pressed', String(on)); } };
     setChip(topicChip, st.topic ? topicById(+st.topic).name : 'Topic', !!st.topic);
     setChip(kindChip, st.kind ? spec.kinds[st.kind]?.label || st.kind : 'Type', !!st.kind);
-    setChip(catChip, st.category || 'Category', !!st.category);
     statusChips.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.status === st.status)));
     count.textContent = `${rows.length} of ${items.length} ${noun[1]}`;
     selAll.hidden = selNone.hidden = !st.select;
@@ -1211,14 +1187,10 @@ function manage(body, spec) {
     let content;
     if (!rows.length && items.length) {
       content = h('div', { class: 'empty small' }, h('p', {}, `No ${noun[1]} match.`),
-        h('button', { class: 'btn', onclick: () => { Object.assign(st, { q: '', topic: '', kind: '', category: '', status: 'all' }); search.value = ''; filtersChanged(); } }, 'Clear search and filters'));
-    } else if (spec.grouped || spec.groups) {
-      const defs = groupDefs();
-      if (spec.groups && defs.length === 1 && defs[0].flat) content = [h('div', { class: 'list' }, rows.map(rowFor))];
-      else {
-        content = defs.filter((g) => !st.topic || g.id === +st.topic).map((g) => [g, rows.filter(g.test)])
-          .filter(([, r]) => r.length || (!filterActive() && !st.select && !spec.groups)).map(([g, r]) => groupEl(g, r));
-      }
+        h('button', { class: 'btn', onclick: () => { Object.assign(st, { q: '', topic: '', kind: '', status: 'all' }); search.value = ''; filtersChanged(); } }, 'Clear search and filters'));
+    } else if (spec.grouped) {
+      content = groupDefs().filter((g) => !st.topic || g.id === +st.topic).map((g) => [g, rows.filter(g.test)])
+        .filter(([, r]) => r.length || (!filterActive() && !st.select)).map(([g, r]) => groupEl(g, r));
     } else {
       content = [h('div', { class: 'list' }, rows.map(rowFor), addRowEl(spec.addRow))];
     }
@@ -1234,13 +1206,10 @@ const SETTINGS = {
   async topics(body) {
     const topics = await data.topics();
     const total = topics.filter((t) => t.enabled).reduce((s, t) => s + t.weight, 0) || 1;
-    const hasCategory = true;
-    body.append(h('p', { class: 'intro' }, topics.length ? 'Topics are the channels in your feed. Set how much each one gets in Balance, and group them with a category so the feed\'s topic picker stays tidy.' : 'Topics are the channels in your feed. Start from a starter pack or add your own.'));
+    body.append(h('p', { class: 'intro' }, topics.length ? 'Topics are the channels in your feed. Set how much each one gets in Balance.' : 'Topics are the channels in your feed. Start from a starter pack or add your own.'));
     manage(body, {
-      tab: 'topics', noun: ['topic', 'topics'], items: topics, hasCategory,
-      // Grouped by category, like the feed's topic picker; with no categories at all it is one flat list.
-      groups: (all) => topicGroups(all).map((g) => ({ id: g.raw || '__other', name: g.name, flat: !g.raw, test: (x) => (x.category || '').trim() === g.raw })),
-      search: (t) => `${t.name} ${t.category || ''}`,
+      tab: 'topics', noun: ['topic', 'topics'], items: topics,
+      search: (t) => t.name,
       statuses: [['on', 'Shown', (t) => t.enabled], ['off', 'Hidden', (t) => !t.enabled]],
       row: (t) => ({
         dot: t.color, title: t.name,
@@ -1254,17 +1223,6 @@ const SETTINGS = {
       on: { label: 'Show', done: 'Showing' }, off: { label: 'Hide', done: 'Hid' },
       actions: (ctx) => [
         ctx.enable(true), ctx.enable(false),
-        {
-          label: 'Set category…', run: (ids) => {
-            const cats = [...new Set(topics.map((t) => (t.category || '').trim()).filter(Boolean))].sort();
-            const input = h('input', { type: 'text', list: 'bulk-categories', placeholder: 'e.g. Learning', autocomplete: 'off' });
-            openSheet('Set category', h('div', {},
-              field(`Category for ${plural(ids.length, ctx.noun)}`, input, 'Leave empty to clear the category.'),
-              h('datalist', { id: 'bulk-categories' }, cats.map((c) => h('option', { value: c }))),
-              h('button', { class: 'btn primary', onclick: () => ctx.apply(() => data.updateMany('topics', ids, { category: input.value.trim() }), `Updated ${plural(ids.length, ctx.noun)}`) }, 'Apply')));
-            input.focus();
-          },
-        },
         ctx.remove((n) => `Delete ${n}? This also deletes all their sources and card types.`),
       ],
     });
@@ -1276,8 +1234,6 @@ const SETTINGS = {
     const initialPct = toPercents(initial);
     let shares = initial.slice();
     const locked = topics.map(() => false);
-    const groups = topicGroups(topics).map((g) => ({ ...g, idx: g.topics.map((t) => topics.indexOf(t)) }));
-    const categorised = groups.some((g) => g.raw);
 
     const stack = h('div', { class: 'stack', role: 'img', 'aria-label': 'Share of feed by topic' }, topics.map((t) => h('span', { style: { '--c': t.color } })));
     const save = h('button', { class: 'btn primary' }, 'Save');
@@ -1287,11 +1243,6 @@ const SETTINGS = {
       const num = h('input', { type: 'number', min: 0, max: 100, step: 1, inputmode: 'numeric', 'aria-label': `${t.name} percent`, onchange: () => change(setShare(shares, locked, i, +num.value)) });
       const lock = h('button', { class: 'act lock', 'aria-label': `Lock ${t.name}`, 'aria-pressed': 'false', title: 'Lock this share', onclick: () => { locked[i] = !locked[i]; lock.setAttribute('aria-pressed', String(locked[i])); draw(); } }, icon('lock'));
       return { range, num, lock };
-    });
-    const groupRefs = groups.map((g) => {
-      const range = h('input', { type: 'range', min: 0, max: 100, step: 1, 'aria-label': `${g.name} share`, oninput: () => change(setGroupShare(shares, locked, g.idx, +range.value)) });
-      const out = h('b', {});
-      return { range, out };
     });
     const change = (next) => { shares = next; draw(); };
     const draw = () => {
@@ -1303,11 +1254,6 @@ const SETTINGS = {
         r.lock.setAttribute('aria-pressed', String(locked[i]));
         stack.children[i].style.flexGrow = String(shares[i]);
         stack.children[i].title = `${t.name} ${pct[i]}%`;
-      });
-      groups.forEach((g, gi) => {
-        const sum = g.idx.reduce((a, i) => a + shares[i], 0);
-        groupRefs[gi].range.value = sum; groupRefs[gi].out.textContent = `${Math.round(sum)}%`;
-        groupRefs[gi].range.disabled = g.idx.every((i) => locked[i]);
       });
       const dirty = pct.some((v, i) => v !== initialPct[i]);
       save.disabled = !dirty;
@@ -1330,16 +1276,10 @@ const SETTINGS = {
     body.append(
       h('p', { class: 'intro' }, 'How much of your feed each topic gets. The shares always add up to 100%: move one and the others give way in proportion. Lock a topic to hold its share. A topic with nothing left to show is skipped, so real shares can drift a little.'),
       stack,
-      ...groups.flatMap((g, gi) => [
-        categorised ? h('div', { class: 'bal-group' }, h('span', {}, g.name), groupRefs[gi].out, groupRefs[gi].range) : null,
-        h('div', { class: 'list' }, g.topics.map((t) => {
-          const i = topics.indexOf(t);
-          return h('div', { class: 'bal-row' },
-            h('div', { class: 'bal-top' }, h('span', { class: 'dot', style: { '--c': t.color } }), h('span', { class: 'grow title' }, t.name), refs[i].lock,
-              h('label', { class: 'pct' }, refs[i].num, '%')),
-            refs[i].range);
-        })),
-      ]),
+      h('div', { class: 'list' }, topics.map((t, i) => h('div', { class: 'bal-row' },
+        h('div', { class: 'bal-top' }, h('span', { class: 'dot', style: { '--c': t.color } }), h('span', { class: 'grow title' }, t.name), refs[i].lock,
+          h('label', { class: 'pct' }, refs[i].num, '%')),
+        refs[i].range))),
       h('div', { class: 'toolbar' }, save, h('button', { class: 'btn', onclick: even }, 'Even out'),
         h('button', { class: 'btn', onclick: () => { shares = initial.slice(); locked.fill(false); draw(); } }, 'Reset'), state),
     );
@@ -1548,21 +1488,19 @@ async function openPackPicker() {
 function editTopic(t) {
   const active = meta.topics.filter((x) => x.enabled);
   // A new topic starts with an average share; fine-tune it in Balance.
-  t ||= { name: '', color: '#64748b', weight: active.length ? Math.round((active.reduce((a, x) => a + x.weight, 0) / active.length) * 100) / 100 : 2, curated_ratio: 0.5, enabled: true, category: '' };
+  t ||= { name: '', color: '#64748b', weight: active.length ? Math.round((active.reduce((a, x) => a + x.weight, 0) / active.length) * 100) / 100 : 2, curated_ratio: 0.5, enabled: true };
   const name = h('input', { type: 'text', value: t.name, placeholder: 'e.g. Chess' });
-  const category = h('input', { type: 'text', value: t.category || '', placeholder: 'e.g. Music, News, Tech', list: 'category-options', autocapitalize: 'words' });
-  const options = h('datalist', { id: 'category-options' }, [...new Set(meta.topics.map((x) => (x.category || '').trim()).filter(Boolean))].map((c) => h('option', { value: c })));
   const color = h('input', { type: 'color', value: t.color });
   const rOut = h('b', {}, `${Math.round(t.curated_ratio * 100)}%`);
   const ratio = h('input', { type: 'range', min: 0, max: 1, step: 0.05, value: t.curated_ratio, oninput: () => { rOut.textContent = `${Math.round(ratio.value * 100)}%`; } });
   const total = active.reduce((a, x) => a + x.weight, 0) || 1;
   const share = t.id && t.enabled ? `${Math.round((t.weight / total) * 100)}% of your feed` : null;
   openSheet(t.id ? 'Edit topic' : 'New topic', h('div', {},
-    field('Name', name), field('Category', h('div', {}, category, options), 'Groups topics in the feed\'s topic filter. Leave empty for none.'), field('Colour', color),
+    field('Name', name), field('Colour', color),
     share ? h('div', { class: 'field' }, h('span', {}, 'Share of feed'), h('div', { class: 'sub' }, share, ' · ', h('button', { class: 'link', onclick: () => { location.hash = '#/settings/balance'; } }, 'change in Balance'))) : null,
     field(h('span', {}, 'Articles vs practice cards: ', rOut), ratio, 'Chance each slot is an article when unread articles exist; otherwise it is a practice card.'),
     h('div', { class: 'toolbar' },
-      h('button', { class: 'btn primary', onclick: () => name.value.trim() ? saveRow('topics', t, { name: name.value.trim(), category: category.value.trim(), color: color.value, weight: t.weight, curated_ratio: +ratio.value, enabled: t.enabled }) : toast('Name is required') }, 'Save'),
+      h('button', { class: 'btn primary', onclick: () => name.value.trim() ? saveRow('topics', t, { name: name.value.trim(), color: color.value, weight: t.weight, curated_ratio: +ratio.value, enabled: t.enabled }) : toast('Name is required') }, 'Save'),
       t.id ? h('button', { class: 'btn danger', onclick: () => deleteRow('topics', t, `"${t.name}" and all its sources and card types`) }, 'Delete') : null)));
 }
 

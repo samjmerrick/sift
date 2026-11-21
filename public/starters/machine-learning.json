@@ -386,7 +386,6 @@
  "topics": [
   {
    "name": "Machine learning",
-   "category": "Tech",
    "color": "#c026d3",
    "weight": 2,
    "curated_ratio": 1,
@@ -484,7 +483,6 @@
   },
   {
    "name": "ML concepts",
-   "category": "Tech",
    "color": "#a21caf",
    "weight": 1.5,
    "curated_ratio": 0.4,

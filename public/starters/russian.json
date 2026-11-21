@@ -4,7 +4,6 @@
  "topics": [
   {
    "name": "Russian",
-   "category": "Languages",
    "color": "#dc2626",
    "weight": 2.5,
    "curated_ratio": 0.3,

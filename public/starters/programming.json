@@ -4,7 +4,6 @@
   "topics": [
     {
       "name": "Programming",
-      "category": "Tech",
       "color": "#2563eb",
       "weight": 3,
       "curated_ratio": 0.9,
