@@ -112,6 +112,9 @@ main { max-width: 680px; margin: 0 auto; padding: 12px 12px 24px; }
 .prompt-text { font: 400 19px/1.45 var(--serif); margin: 8px 0 4px; text-wrap: pretty; }
 .q { font: 600 19px/1.35 var(--serif); margin: 8px 0 4px; }
 .sub { color: var(--ink-3); font-size: 14px; margin: 2px 0 0; }
+.note-title { font: 600 21px/1.3 var(--serif); margin: 10px 0 6px; text-wrap: balance; }
+.note-body { font: 400 16.5px/1.55 var(--serif); margin: 0 0 6px; text-wrap: pretty; white-space: pre-line; }
+.note-extra { font-size: 14px; line-height: 1.5; color: var(--ink-3); margin: 6px 0 2px; white-space: pre-line; }
 .reveal {
   margin: 12px 0 4px; width: 100%; border: 1.5px dashed var(--line); background: var(--surface-2); border-radius: 12px;
   padding: 14px; color: var(--ink-2); font-size: 15px; cursor: pointer;

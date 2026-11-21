@@ -43,6 +43,20 @@ export const GENERATOR_KINDS = {
     },
   },
 
+  notes: {
+    label: 'Notes (reading)',
+    description: 'Short reading cards from one of your decks: the title, its explanation and any note. No quiz or spaced repetition.',
+    fields: [{ key: 'deck_id', label: 'Deck', type: 'deck' }],
+    generate(cfg, { decks, excludeKeys }) {
+      const deck = decks?.[cfg.deck_id];
+      if (!deck) return null;
+      const pool = [deck.sample, deck.new, deck.due].find((l) => l?.some((c) => !excludeKeys.has(`note:${c.id}`)));
+      if (!pool) return null;
+      const card = pick(pool.filter((c) => !excludeKeys.has(`note:${c.id}`)));
+      return { key: `note:${card.id}`, kind: 'note', deck: deck.name, title: card.front, body: card.back, note: card.note };
+    },
+  },
+
   guitar_chord: {
     label: 'Guitar chord shapes',
     description: 'A chord diagram. In quiz mode you see the name first and tap to reveal the shape.',

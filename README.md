@@ -11,6 +11,7 @@ A self-hosted, infinitely scrolling feed of useful things to read and practise. 
 |---|---|
 | Flashcards | Spaced repetition (SM-2 style) from any deck you import (comma or tab separated, so pasting from a spreadsheet works). |
 | Text cards | One random line from a list you paste in: practice prompts, tips, quotes, checklists. |
+| Notes | Short reading cards from one of your decks: the title, its explanation and any note. No quiz, no spaced repetition. |
 | Guitar chord shapes | Open, seventh, sus and movable barre chords, drawn as diagrams. Quiz mode: name first, then reveal. |
 | Guitar scale shapes | A scale in one position, rooted on the E or A string. Note or degree labels. |
 | Fretboard note finder | "Find G on string 5", then reveal. |
@@ -92,7 +93,7 @@ A pack is one JSON file in `public/starters/`. Add its filename to `public/start
 }
 ```
 
-Source kinds are `rss` and `hn`. Card kinds and their `config` keys are defined in `public/lib/generators.js` (`flashcards`, `prompts`, `guitar_chord`, `guitar_scale`, `fretboard_note`, `piano_chord`, `key_signature`, `ear_interval`, `staff_notes`). `npm test` validates every pack and installs each one into a real schema, so mistakes show up before you deploy.
+Source kinds are `rss` and `hn`. Card kinds and their `config` keys are defined in `public/lib/generators.js` (`flashcards`, `notes`, `prompts`, `guitar_chord`, `guitar_scale`, `fretboard_note`, `piano_chord`, `key_signature`, `ear_interval`, `staff_notes`). `npm test` validates every pack and installs each one into a real schema, so mistakes show up before you deploy.
 
 A pack only adds topics and decks whose names don't exist yet, so installing one twice is harmless.
 

@@ -333,7 +333,7 @@ function renderCard(c, { savedId } = {}) {
       else if (savedCardId) { await data.deleteSavedCard(savedCardId); savedCardId = null; }
     },
   });
-  card.append(metaRow(c, [generatorButton(c) || c.generator]), ...body.filter(Boolean), h('div', { class: 'actions' }, h('span', { class: 'spacer' }), ...btns,
+  card.append(metaRow(c, [c.kind === 'note' ? c.deck : null, generatorButton(c) || c.generator]), ...body.filter(Boolean), h('div', { class: 'actions' }, h('span', { class: 'spacer' }), ...btns,
     c.generator ? h('button', { class: 'act more', 'aria-label': `More options for ${c.generator}`, onclick: () => openCardTypeSheet(c) }, icon('more')) : null));
   return card;
 }
@@ -444,6 +444,9 @@ const GEN_RENDER = {
         diagram.innerHTML = staffSvg(c, true);
         return [h('div', { class: 'a-main' }, c.answer), h('div', { class: 'a-note' }, c.detail), c.audio !== 'off' ? h('div', { class: 'play' }, play('Hear it')) : null];
       })];
+  },
+  note(c) {
+    return [h('h3', { class: 'note-title' }, c.title), h('p', { class: 'note-body' }, c.body), c.note ? h('p', { class: 'note-extra' }, c.note) : null];
   },
   prompt(c) {
     return [h('div', { class: 'label', style: { marginTop: '8px' } }, c.label), h('p', { class: 'prompt-text' }, c.text)];
