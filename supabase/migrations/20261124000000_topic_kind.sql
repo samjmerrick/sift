@@ -6,7 +6,7 @@ create schema if not exists private;
 -- Topics with card types but no sources become card topics; topics with both are split: the original keeps its
 -- sources and articles, and a new "<name> practice" topic (placed right after it) takes the card types and saved cards.
 create or replace function private.split_mixed_topics() returns int
-language plpgsql as $$
+language plpgsql set search_path = public as $$
 declare
   t record;
   new_id bigint;
