@@ -110,6 +110,28 @@ const assert = (cond, msg) => { if (!cond) throw new Error(`FAILED: ${msg}`); co
   const savedCount = await p.$$eval('.saved-list .card', (c) => c.length);
   assert(savedCount === 2, `saved view shows the saved article and practice card (${savedCount})`);
 
+  console.log('hide + reader');
+  await p.click('a[data-tab=feed]');
+  await p.waitForSelector('.k-article');
+  const hideId = await p.$eval('.k-article[data-source]', (el) => el.dataset.source);
+  await p.click(`.k-article[data-source="${hideId}"] .act.more`);
+  await p.click('#sheet .row:has-text("Hide source")');
+  await p.waitForSelector('.toast.show:has-text("Hidden")');
+  assert((await p.$$(`.k-article[data-source="${hideId}"]`)).length === 0, 'hiding a source clears its cards at once');
+  await p.click('.toast button:has-text("Undo")');
+  await p.waitForTimeout(400);
+  assert((await sql`select enabled from sources where id = ${hideId}`)[0].enabled, 'undo re-enables the source');
+  await sql`update items set seen_at = null where url like 'https://sample.test/%'`;
+  await p.click('#refresh');
+  await p.waitForSelector('.k-article');
+  const sample = await sql`select id from items where url = 'https://sample.test/0'`;
+  await p.evaluate((i) => { location.hash = `#/read/${i}`; }, sample[0].id);
+  await p.waitForSelector('.reader-fail, .reader-body, .reader-skel');
+  assert(await p.isHidden('.tabbar'), 'reader view opens (tab bar hidden)');
+  await shot('reader');
+  await p.click('.reader-back');
+  await p.waitForSelector('.feed .card');
+
   console.log('settings');
   await p.click('a[data-tab=settings]');
   await p.waitForSelector('.row');
