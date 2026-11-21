@@ -73,7 +73,12 @@ const pickTopics = async (p, names) => {
     await p.waitForSelector(`.sheet .row:has-text("${name}") button:has-text("Added")`);
   }
   const [counts] = await sql`select (select count(*) from topics)::int t, (select count(*) from cards)::int c, (select count(*) from generators)::int g`;
-  assert(counts.t === 4 && counts.c === 90 && counts.g === 9, `starter packs install topics, deck and card types (${JSON.stringify(counts)})`);
+  assert(counts.t === 7 && counts.c === 90 && counts.g === 9, `starter packs install topics, deck and card types (${JSON.stringify(counts)})`);
+  const split = await sql`select name, kind from topics order by position`;
+  assert(split.map((r) => `${r.name}:${r.kind}`).join() === 'AI:articles,Russian:articles,Russian practice:cards,Guitar:articles,Guitar practice:cards,Piano:articles,Piano practice:cards',
+    `a pack install results in split topics in order (${split.map((r) => r.name).join(', ')})`);
+  assert((await sql`select count(*)::int n from sources where topic_id in (select id from topics where kind = 'cards')`)[0].n === 0
+    && (await sql`select count(*)::int n from generators where topic_id in (select id from topics where kind = 'articles')`)[0].n === 0, 'sources only on article topics, card types only on card topics');
   await p.click('.sheet-head [data-close]');
   await addSamples();
   await p.click('a[data-tab=feed]');
@@ -91,7 +96,41 @@ const pickTopics = async (p, names) => {
   assert(count >= 40, `infinite scroll keeps loading (${count} cards)`);
   assert(kinds.has('article') && kinds.has('flashcard') && kinds.size >= 6, `mixes card kinds: ${[...kinds].join(', ')}`);
 
-  await pickTopics(p, 'Russian');
+  console.log('feed type filter');
+  await p.evaluate(() => scrollTo(0, 0)); await p.waitForTimeout(400);
+  assert(await p.isVisible('#typebar') && (await p.$$eval('#typebar button', (b) => b.map((x) => x.textContent))).join() === 'All,Articles,Cards', 'the feed shows an All / Articles / Cards bar under the header');
+  assert((await p.getAttribute('#typebar button[data-type=all]', 'aria-pressed')) === 'true', 'the feed starts on All');
+  const clearsHeader = await p.evaluate(() => document.querySelector('.card').getBoundingClientRect().top >= document.getElementById('typebar').getBoundingClientRect().bottom - 1);
+  assert(clearsHeader, 'the bar does not cover the first card');
+  await shot('feed-filter');
+  const settled = () => p.waitForFunction(() => !document.querySelector('.skeleton') && document.querySelectorAll('.card').length > 0);
+  const cardKinds = () => p.$$eval('.card', (cs) => cs.map((c) => c.classList.contains('k-article') ? 'article' : 'generated'));
+  await p.click('#typebar button[data-type=articles]'); await settled();
+  let ks = await cardKinds();
+  assert(ks.length >= 4 && ks.every((k) => k === 'article'), `Articles shows only article cards (${ks.length})`);
+  await p.click('#typebar button[data-type=cards]'); await settled();
+  ks = await cardKinds();
+  assert(ks.length >= 8 && ks.every((k) => k === 'generated'), `Cards shows only generated cards (${ks.length})`);
+  await p.click('#typebar button[data-type=all]'); await settled();
+  await p.waitForTimeout(300);
+  ks = await cardKinds();
+  assert(new Set(ks).size === 2, 'All shows both');
+  await pickTopics(p, 'Russian practice');
+  await p.click('#typebar button[data-type=articles]');
+  await p.waitForSelector('.empty h3:has-text("No article topics in your filter")');
+  assert(true, 'an empty filtered feed explains itself');
+  await p.click('.empty button:has-text("Show everything")');
+  await settled();
+  await pickTopics(p, null);
+  await settled();
+  for (let i = 0; i < 4; i++) { await p.mouse.wheel(0, 400); await p.waitForTimeout(150); }
+  await p.waitForTimeout(400);
+  assert((await p.getAttribute('#typebar', 'data-hidden')) !== null && (await p.$eval('#typebar', (e) => getComputedStyle(e).visibility)) === 'hidden', 'the bar hides after scrolling down');
+  await p.mouse.wheel(0, -120); await p.waitForTimeout(400);
+  assert((await p.getAttribute('#typebar', 'data-hidden')) === null && await p.isVisible('#typebar'), 'the bar reappears on scrolling up');
+  await p.evaluate(() => scrollTo(0, 0)); await p.waitForTimeout(300);
+
+  await pickTopics(p, 'Russian practice');
   await p.waitForSelector('.k-flashcard .reveal');
   await p.click('.k-flashcard .reveal');
   await p.click('.k-flashcard .grade .good');
@@ -112,12 +151,14 @@ const pickTopics = async (p, names) => {
   await p.waitForTimeout(800);
   const [seen] = await sql`select count(*)::int n from items where seen_at is not null`;
   assert(seen.n >= 1, `articles on screen are marked seen (${seen.n})`);
-  await p.waitForSelector('.k-prompt, .k-quiz, .k-guitar_chord, .k-keyboard, .k-fretboard, .k-ear');
+  for (let i = 0; i < 12 && !(await p.$('.card:not(.k-article):not(.k-flashcard)')); i++) { await p.mouse.wheel(0, 2500); await p.waitForTimeout(300); }
+  await p.waitForSelector('.card:not(.k-article):not(.k-flashcard) .act.save');
   await p.click('.card:not(.k-article):not(.k-flashcard) .act.save');
   await p.waitForSelector('.toast.show:has-text("Saved")');
 
   await p.click('a[data-tab=saved]');
   await p.waitForSelector('.saved-list .card');
+  assert(!(await p.isVisible('#typebar')), 'the type bar is hidden outside the feed');
   const savedCount = await p.$$eval('.saved-list .card', (c) => c.length);
   assert(savedCount === 2, `saved view shows the saved article and practice card (${savedCount})`);
 
@@ -185,23 +226,24 @@ const pickTopics = async (p, names) => {
   await p.waitForSelector('.toast.show:has-text("Hidden")');
   await p.waitForTimeout(400);
   const visibleW = (await sql`select weight from topics where enabled order by position`).map((r) => Number(r.weight));
-  assert(visibleW.length === 3 && Math.abs(visibleW[2] - 1.28) < 1e-4, 'hiding a topic from the feed rebalances the remaining weights');
+  assert(visibleW.length === 6 && Math.abs(visibleW[5] - 0.6554) < 1e-3, 'hiding a topic from the feed rebalances the remaining weights');
   await p.click('.toast button:has-text("Undo")');
   await p.waitForTimeout(500);
-  assert((await sql`select count(*)::int n from topics where enabled`)[0].n === 4 && (await sql`select weight from topics where enabled order by position desc limit 1`)[0].weight > 1, 'undo restores the topic and its weight');
+  assert((await sql`select count(*)::int n from topics where enabled`)[0].n === 7 && Math.abs((await sql`select weight from topics where enabled order by position desc limit 1`)[0].weight - 0.5243) < 1e-3, 'undo restores the topic and its weight');
 
   console.log('settings: topics as a stack rank');
   await p.click('a[data-tab=settings]');
   await p.waitForSelector('.rank-list .row');
-  assert((await p.$$('.seg:not(.falloff) button')).length === 2 && (await p.$$eval('.seg:not(.falloff) button', (b) => b.map((x) => x.textContent))).join() === 'Topics,Domains', 'Settings has only the Topics and Domains tabs');
+  assert((await p.$$('#view .seg:not(.falloff) button')).length === 2 && (await p.$$eval('#view .seg:not(.falloff) button', (b) => b.map((x) => x.textContent))).join() === 'Topics,Domains', 'Settings has only the Topics and Domains tabs');
   const rankNames = () => p.$$eval('.rank-list .row .title', (t) => t.map((x) => x.firstChild.textContent));
   const dbRank = async () => (await sql`select name, position, weight from topics where enabled order by position`).map((r) => ({ ...r, weight: Number(r.weight) }));
   const waitSaved = () => p.waitForSelector('.rank-status:text-is("Saved")');
   const initial = await rankNames();
-  assert(initial.length === 4, `topics are listed in rank order (${initial.join(' > ')})`);
-  assert((await p.$eval('.rank-list .row .desc', (d) => d.textContent)).includes('sources'), 'each row shows its source and card type counts');
+  assert(initial.length === 7, `topics are listed in rank order (${initial.join(' > ')})`);
+  const descs = await p.$$eval('.rank-list .row .desc', (d) => d.map((x) => x.textContent));
+  assert(/^Articles · \d+ sources$/.test(descs[0]) && descs.some((d) => /^Cards · \d+ card types$/.test(d)), `rows describe their kind and count (${descs[0]} / ${descs[2]})`);
   const pcts = await p.$$eval('.rank-pct', (e) => e.map((x) => parseInt(x.textContent)));
-  assert(pcts.reduce((a, b) => a + b, 0) === 100 && pcts[0] > pcts[3], `live shares add up to 100% and fall down the list (${pcts.join(', ')})`);
+  assert(pcts.reduce((a, b) => a + b, 0) === 100 && pcts[0] > pcts[6], `live shares add up to 100% and fall down the list (${pcts.join(', ')})`);
   assert((await p.getAttribute('.falloff button:has-text("Smooth")', 'aria-pressed')) === 'true', 'Smooth is the default falloff');
   await p.waitForSelector('.toast.show', { state: 'hidden' }).catch(() => {});
   await shot('topics-rank');
@@ -230,7 +272,7 @@ const pickTopics = async (p, names) => {
   const steep = await p.$$eval('.rank-pct', (e) => e.map((x) => parseInt(x.textContent)));
   assert(steep[0] > pcts[0], `Steep gives the top topic a bigger share (${steep[0]}% vs ${pcts[0]}%)`);
   await p.click('.falloff button:has-text("Even")');
-  await p.waitForFunction(() => /^(\d+)%$/.test(document.querySelector('.rank-pct').textContent) && new Set([...document.querySelectorAll('.rank-pct')].map((x) => x.textContent)).size === 1);
+  await p.waitForFunction(() => /^(\d+)%$/.test(document.querySelector('.rank-pct').textContent) && (() => { const v = [...document.querySelectorAll('.rank-pct')].map((x) => parseInt(x.textContent)); return Math.max(...v) - Math.min(...v) <= 1; })());
   await waitSaved();
   rows = await dbRank();
   assert(expectW(1) && Number((await sql`select value from app_settings where key = 'falloff'`)[0].value) === 1, 'Even gives every topic the same weight');
@@ -256,18 +298,28 @@ const pickTopics = async (p, names) => {
   assert(p.url().endsWith('#/settings/topics'), 'a drag does not open the topic page');
 
   console.log('settings: topic page');
-  await p.click('.rank-list .row:has-text("Russian") .title');
+  await p.click(`.rank-list .row[data-id="${(await sql`select id from topics where name = 'Russian'`)[0].id}"] .title`);
   await p.waitForSelector('.page-title:text-is("Russian")');
   assert(p.url().includes('#/settings/topic/'), 'tapping a row opens its topic page');
   await p.waitForFunction(() => document.querySelectorAll('.bulk-toolbar').length === 2).catch(() => {});
-  assert((await p.$$('.bulk-toolbar')).length === 2, 'the topic page has a toolbar for sources and one for card types');
+  assert((await p.$$('.bulk-toolbar')).length === 1 && (await p.$$eval('.section-h', (h) => h.map((x) => x.textContent))).join() === 'Topic settings,Sources', 'an articles topic page has only the Sources section');
   const russianSources = await sql`select name from sources where topic_id = (select id from topics where name = 'Russian')`;
   assert((await p.$$eval('.bulk-list .row .title', (t) => t.map((x) => x.textContent))).includes(russianSources[0].name), 'sources of this topic are listed');
   assert(!(await p.$('.bulk-chips .chip:has-text("Topic")')), 'there is no topic filter on a topic page');
   await shot('topic-page');
-  await p.locator('.bulk-toolbar >> nth=1').scrollIntoViewIfNeeded();
-  await p.waitForTimeout(200);
-  await shot('topic-page-cards');
+  await p.click('.row:has(.title:text-is("Russian")) .btn:has-text("Edit")');
+  assert((await p.textContent('.sheet .kind-fixed')) === 'Articles' && !(await p.$('.sheet [role=radiogroup]')) && !(await p.$('.sheet input[type=range]')), 'an existing topic shows its kind read-only and has no articles ratio');
+  await p.click('.sheet-head [data-close]');
+  await p.click('.reader-back');
+  await p.waitForSelector('.rank-list');
+  await p.click(`.rank-list .row[data-id="${(await sql`select id from topics where name = 'Russian practice'`)[0].id}"] .title`);
+  await p.waitForSelector('.page-title:text-is("Russian practice")');
+  await p.waitForSelector('.bulk-toolbar');
+  assert((await p.$$('.bulk-toolbar')).length === 1 && (await p.$$eval('.section-h', (h) => h.map((x) => x.textContent))).join() === 'Topic settings,Card types', 'a cards topic page has only the Card types section');
+  await p.click('.bulk-list >> text=+ Add card type');
+  assert((await p.$$eval('.sheet select', (ss) => ss.find((s) => s.closest('.field')?.textContent.startsWith('Topic'))?.innerText.split('\n').sort().join())) === 'Guitar practice,Piano practice,Russian practice', 'a card type can only be placed in card topics');
+  await p.click('.sheet-head [data-close]');
+  await shot('card-topic-page');
   await p.click('.reader-back');
   await p.waitForSelector('.rank-list');
 
@@ -305,11 +357,9 @@ const pickTopics = async (p, names) => {
   await p.click('.bulk-select >> nth=0');
   await p.click('text=Select all shown >> nth=0');
   assert((await p.textContent('.bulk-bar-n')).startsWith(`${hackerIds.length} selected`), 'select all shown selects the matches');
-  await p.click('.bulk-select >> nth=1');
-  assert((await p.$$('.bulk-bar:not([hidden])')).length === 1 && (await p.textContent('.bulk-select >> nth=0')) === 'Select', 'selecting in card types leaves selection mode in sources: one action bar at a time');
-  await p.click('.bulk-select >> nth=1'); // leave
-  await p.click('.bulk-select >> nth=0');
-  await p.click('text=Select all shown >> nth=0');
+  await p.click('.bulk-actions >> text=Move to topic…');
+  assert((await p.$$eval('#sheet .row .title', (t) => t.map((x) => x.textContent))).sort().join() === 'AI,Guitar,Piano,Russian', `Move to topic lists only article topics (${(await p.$$eval('#sheet .row .title', (t) => t.map((x) => x.textContent))).join()})`);
+  await p.click('.sheet-head [data-close]');
   await shot('bulk-select');
   await p.click('.bulk-actions >> text=Turn off');
   await p.waitForSelector('.toast.show:has-text("Turned off")');
@@ -349,17 +399,22 @@ const pickTopics = async (p, names) => {
   await p.click('.seg button:has-text("Topics")');
   await p.waitForSelector('text=+ Add topic');
   await p.click('text=+ Add topic');
+  assert((await p.$$eval('.sheet [role=radio]', (b) => b.map((x) => x.textContent))).join() === 'Articles,Practice cards' && (await p.getAttribute('.sheet [data-kind=articles]', 'aria-checked')) === 'true' && !(await p.$('.sheet input[type=range]')), 'a new topic chooses Articles or Practice cards, with no ratio field');
   await p.fill('.sheet input[type=text]', 'Chess');
+  await p.click('.sheet [data-kind=cards]');
+  assert((await p.textContent('.sheet small')).includes('Flashcards'), 'the kind choice explains itself');
+  await shot('new-topic');
   await p.click('.sheet .btn.primary');
   await p.waitForFunction(() => [...document.querySelectorAll('.rank-list .row .title')].some((t) => t.firstChild.textContent === 'Chess'));
   const titles = await rankNames();
-  assert(titles.indexOf('Chess') === 4, 'new topic joins the bottom of the rank');
+  assert(titles.indexOf('Chess') === 7, 'new topic joins the bottom of the rank');
   rows = await dbRank();
-  assert(rows[4].name === 'Chess' && expectW(0.8), 'adding a topic rebalances the weights');
+  assert(rows[7].name === 'Chess' && expectW(0.8), 'adding a topic rebalances the weights');
   await p.click('.rank-list .row:has-text("Chess") .title');
   await p.waitForSelector('.page-title:text-is("Chess")');
-  await p.waitForSelector('.bulk-toolbar >> nth=1');
-  await p.click('.bulk-list >> nth=1 >> text=+ Add card type');
+  await p.waitForSelector('.bulk-toolbar');
+  assert((await p.$$eval('.section-h', (h) => h.map((x) => x.textContent))).join() === 'Topic settings,Card types', 'the new cards topic has only Card types');
+  await p.click('.bulk-list >> text=+ Add card type');
   await p.selectOption('.sheet select >> nth=0', 'prompts');
   await p.fill('.sheet textarea', 'Learn the Italian opening\nDo 5 tactics puzzles');
   await p.click('.sheet .btn.primary');
@@ -369,7 +424,7 @@ const pickTopics = async (p, names) => {
 
   console.log('decks from the card type editor');
   assert((await p.$$('.seg button:has-text("Decks")')).length === 0, 'there is no separate Decks tab');
-  await p.click('.bulk-list >> nth=1 >> text=+ Add card type');
+  await p.click('.bulk-list >> text=+ Add card type');
   await p.selectOption('.sheet select >> nth=0', 'flashcards');
   assert(await p.isDisabled('.sheet .deck-edit'), 'Edit deck is disabled until a deck is chosen');
   await p.fill('.sheet .field:has-text("Name") input[type=text]', 'Opening cards'); // survives the round trip to the deck editor
@@ -398,7 +453,7 @@ const pickTopics = async (p, names) => {
   assert(fc && fc.config.deck_id === Number(openings.id), 'the flashcards card type points at the new deck');
 
   // A notes card type on the same deck, then removing a scratch deck and returning to the editor.
-  await p.click('.bulk-list >> nth=1 >> text=+ Add card type');
+  await p.click('.bulk-list >> text=+ Add card type');
   await p.selectOption('.sheet select >> nth=0', 'notes');
   await p.selectOption('.sheet .deck-pick select', String(openings.id));
   await p.click('.sheet .btn.primary:has-text("Save")');
@@ -422,7 +477,7 @@ const pickTopics = async (p, names) => {
   await p.click('.topic-flip');
   await p.waitForSelector('.topic-flip:has-text("Show topic")');
   assert((await sql`select enabled from topics where name = 'Chess'`)[0].enabled === false, 'Hide topic hides it');
-  assert((await dbRank()).length === 4 && expectW(0.8), 'hiding a topic rebalances the rest');
+  assert((await dbRank()).length === 7 && expectW(0.8), 'hiding a topic rebalances the rest');
   await p.click('.reader-back');
   await p.waitForSelector('.hidden-list .row:has-text("Chess")');
   assert((await rankNames()).indexOf('Chess') === -1, 'a hidden topic leaves the rank');
@@ -432,7 +487,7 @@ const pickTopics = async (p, names) => {
   await shot('topics-hidden');
   await p.click('.hidden-list .row:has-text("Chess") button:has-text("Show")');
   await p.waitForFunction(() => [...document.querySelectorAll('.rank-list .row .title')].some((t) => t.firstChild.textContent === 'Chess'));
-  assert((await rankNames()).indexOf('Chess') === 4 && (await dbRank())[4].name === 'Chess', 'Show puts it back at the bottom of the rank');
+  assert((await rankNames()).indexOf('Chess') === 7 && (await dbRank())[7].name === 'Chess', 'Show puts it back at the bottom of the rank');
   await p.evaluate(() => { location.hash = '#/settings/topic/999999'; });
   await p.waitForSelector('text=That topic no longer exists.');
   await p.evaluate(() => { location.hash = '#/settings/topics'; });
@@ -443,10 +498,15 @@ const pickTopics = async (p, names) => {
   await p.click('.sheet .btn.primary');
   await p.click('.rank-list .row:has-text("Scratch topic") .title');
   await p.waitForSelector('.page-title:text-is("Scratch topic")');
+  await p.waitForSelector('.bulk-toolbar');
+  assert((await p.$$eval('.section-h', (h) => h.map((x) => x.textContent))).join() === 'Topic settings,Sources' && (await sql`select kind from topics where name = 'Scratch topic'`)[0].kind === 'articles', 'a new articles topic has only the Sources section');
+  await p.click('.bulk-list >> text=+ Add source');
+  assert((await p.$$eval('.sheet select', (ss) => ss.find((s) => s.closest('.field')?.textContent.startsWith('Topic'))?.innerText.split('\n').sort().join())) === 'AI,Guitar,Piano,Russian,Scratch topic', 'a source can only be placed in article topics');
+  await p.click('.sheet-head [data-close]');
   p.once('dialog', (d) => d.accept());
   await p.click('.btn.danger:has-text("Delete topic")');
   await p.waitForSelector('.rank-list');
-  assert((await sql`select count(*)::int n from topics where name = 'Scratch topic'`)[0].n === 0 && expectW(0.8) && (await rankNames()).length === 5, 'Delete topic removes it, returns to Topics and rebalances');
+  assert((await sql`select count(*)::int n from topics where name = 'Scratch topic'`)[0].n === 0 && expectW(0.8) && (await rankNames()).length === 8, 'Delete topic removes it, returns to Topics and rebalances');
 
   console.log('old routes');
   for (const old of ['sources', 'cards', 'balance', 'decks', 'nonsense']) {
