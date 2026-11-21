@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { freshDb, sqlData } from './db.js';
 import { installPack, validatePack } from '../public/lib/packs.js';
+import { rankWeights } from '../public/lib/balance.js';
 
 const dir = new URL('../public/starters/', import.meta.url);
 const index = JSON.parse(readFileSync(new URL('index.json', dir), 'utf8'));
@@ -50,4 +51,10 @@ test('flashcard card types point at the installed deck', async () => {
   assert.equal(n, 90);
   const [p] = await sql`select config from generators where kind = 'prompts' limit 1`;
   assert.equal(typeof p.config.lines, 'string');
+});
+
+test('installed topics are stacked in install order with falloff weights', async () => {
+  const rows = await sql`select position, weight from topics order by position`;
+  assert.deepEqual(rows.map((r) => r.position), rows.map((_, i) => i));
+  assert.deepEqual(rows.map((r) => Math.round(r.weight * 1e4) / 1e4), rankWeights(rows.length, 0.8));
 });

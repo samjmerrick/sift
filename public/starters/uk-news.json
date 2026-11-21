@@ -5,7 +5,6 @@
   {
    "name": "UK news",
    "color": "#334155",
-   "weight": 2.5,
    "curated_ratio": 1,
    "sources": [
     {
@@ -58,7 +57,6 @@
   {
    "name": "Reading & Berkshire",
    "color": "#0284c7",
-   "weight": 2,
    "curated_ratio": 1,
    "sources": [
     {

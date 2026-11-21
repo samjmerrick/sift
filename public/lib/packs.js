@@ -3,6 +3,7 @@
 // write their own: see "Starter packs" in the README.
 import { GENERATOR_KINDS } from './generators.js';
 import { SOURCE_KINDS } from './source-kinds.js';
+import { rebalance } from './rank.js';
 
 const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
 
@@ -58,7 +59,7 @@ export async function installPack(data, pack) {
   for (const t of pack.topics) {
     if (existingTopics.has(t.name)) continue;
     const row = await data.insert('topics', {
-      name: t.name, color: t.color || '#64748b', weight: t.weight ?? 2, curated_ratio: t.curated_ratio ?? 0.5, position: await data.nextTopicPosition(),
+      name: t.name, color: t.color || '#64748b', curated_ratio: t.curated_ratio ?? 0.5, position: await data.nextTopicPosition(),
     });
     added.topics++;
     for (const s of t.sources || []) {
@@ -74,5 +75,6 @@ export async function installPack(data, pack) {
       added.cards++;
     }
   }
+  if (added.topics) await rebalance(data); // new topics join the bottom of the stack rank
   return added;
 }

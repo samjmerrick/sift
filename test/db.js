@@ -11,6 +11,8 @@ export const sqlData = (sql) => ({
   topics: () => sql`select * from topics`,
   deckStats: () => sql`select * from decks`,
   nextTopicPosition: async () => (await sql`select coalesce(max(position), 0) + 1 as p from topics`)[0].p,
+  update: async (table, id, patch) => { await sql`update ${sql(table)} set ${sql(patch)} where id = ${id}`; },
+  setting: async (key, fallback) => (await sql`select value from app_settings where key = ${key}`)[0]?.value ?? fallback,
   insert: async (table, row) => (await sql`insert into ${sql(table)} ${sql(row)} returning *`)[0],
   addCards: async (deckId, rows) => { await sql`insert into cards ${sql(rows.map(([front, back, note = ''], i) => ({ deck_id: deckId, front, back, note, position: i + 1 })))}`; return rows.length; },
 });
