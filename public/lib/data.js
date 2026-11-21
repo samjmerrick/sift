@@ -67,6 +67,13 @@ export function createData(client) {
     async insert(table, row) { return check(await client.from(table).insert(row).select().single()); },
     async update(table, id, patch) { check(await client.from(table).update(patch).eq('id', id)); },
     async remove(table, id) { check(await client.from(table).delete().eq('id', id)); },
+    // Bulk variants: one request per 200 ids keeps the `in.(…)` URL comfortably short.
+    async updateMany(table, ids, patch) {
+      for (let i = 0; i < ids.length; i += 200) check(await client.from(table).update(patch).in('id', ids.slice(i, i + 200)));
+    },
+    async removeMany(table, ids) {
+      for (let i = 0; i < ids.length; i += 200) check(await client.from(table).delete().in('id', ids.slice(i, i + 200)));
+    },
     async nextTopicPosition() {
       const rows = check(await client.from('topics').select('position').order('position', { ascending: false }).limit(1));
       return (rows[0]?.position ?? 0) + 1;
