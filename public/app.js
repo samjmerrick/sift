@@ -5,7 +5,8 @@ import { GENERATOR_KINDS, scheduleReview, applyReviewToDeck } from './lib/genera
 import { SOURCE_KINDS } from './lib/source-kinds.js';
 import { installPack } from './lib/packs.js';
 import { STAFF, keySigSteps } from './lib/theory.js';
-import { sharesFromWeights, setShare, toPercents, weightFromPercent } from './lib/balance.js';
+import { sharesFromWeights, toPercents, rankWeights, rankOrder, FALLOFFS, DEFAULT_FALLOFF } from './lib/balance.js';
+import { rebalance, saveRank } from './lib/rank.js';
 import { sanitiseHtml } from './lib/sanitise.js';
 
 // ---------- utilities ----------
@@ -86,7 +87,9 @@ const ICON = {
   score: '<svg viewBox="0 0 24 24"><path d="M12 5l7 8h-4v6H9v-6H5z"/></svg>',
   play: '<svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>',
   ext: '<svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"/></svg>',
-  lock: '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>',
+  grip: '<svg viewBox="0 0 24 24"><circle cx="9" cy="6" r="1.3"/><circle cx="15" cy="6" r="1.3"/><circle cx="9" cy="12" r="1.3"/><circle cx="15" cy="12" r="1.3"/><circle cx="9" cy="18" r="1.3"/><circle cx="15" cy="18" r="1.3"/></svg>',
+  arrowup: '<svg viewBox="0 0 24 24"><path d="M6 15l6-6 6 6"/></svg>',
+  arrowdown: '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
   more: '<svg viewBox="0 0 24 24"><circle cx="5.5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18.5" cy="12" r="1.2"/></svg>',
   back: '<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
 };
@@ -691,8 +694,8 @@ const hideTopic = (c, done) => {
   };
   return hideFromFeed({
     name: t.name,
-    persist: () => data.update('topics', c.topic_id, { enabled: false }),
-    undo: () => data.update('topics', c.topic_id, { enabled: true }),
+    persist: async () => { await data.update('topics', c.topic_id, { enabled: false }); await rebalanceNow(); },
+    undo: async () => { await data.update('topics', c.topic_id, { enabled: true }); await rebalanceNow(); },
     dropItem: (i) => i.topic_id === c.topic_id,
     dropCard: (d) => d.topic === String(c.topic_id),
     local: () => {
@@ -725,7 +728,7 @@ async function editSourceFor(c) {
   try {
     const src = (await data.sourceStats()).find((s) => s.id === c.source_id);
     if (!src) throw new Error('That source no longer exists.');
-    const target = '#/settings/sources';
+    const target = `#/settings/topic/${src.topic_id}`;
     if (location.hash !== target) {
       const routed = new Promise((resolve) => window.addEventListener('hashchange', resolve, { once: true }));
       location.hash = target;
@@ -752,7 +755,7 @@ function openSourceSheet(c, { reader = false } = {}) {
     row('Show less from this source', 'Lowers its weight, so it ranks lower.', act(() => nudgeSource(c, 0.6))),
     row('Show more from this source', 'Raises its weight, so it ranks higher.', act(() => nudgeSource(c, 1.5))),
     topic.name ? row(`Hide topic “${topic.name}”`, 'Hides the whole topic, including its practice cards.', act(() => hideTopic(c, done))) : null,
-    row('Edit source…', 'Name, keywords, weight and more, in Settings.', act(() => editSourceFor(c))),
+    row('Edit source…', 'Name, keywords, weight and more, in its topic’s settings.', act(() => editSourceFor(c))),
   ]));
 }
 
@@ -796,7 +799,7 @@ async function editCardTypeFor(c) {
   try {
     const g = (await data.generators()).find((x) => x.id === c.generator_id);
     if (!g) throw new Error('That card type no longer exists.');
-    const target = '#/settings/cards';
+    const target = `#/settings/topic/${g.topic_id}`;
     if (location.hash !== target) {
       const routed = new Promise((resolve) => window.addEventListener('hashchange', resolve, { once: true }));
       location.hash = target;
@@ -821,7 +824,7 @@ async function openCardTypeSheet(c) {
       sheetRow('Show less of this card type', 'Lowers its weight, so it appears less often.', sheetAct(() => nudgeCardType(c, 0.6))),
       sheetRow('Show more of this card type', 'Raises its weight, so it appears more often.', sheetAct(() => nudgeCardType(c, 1.5))),
       topicRow,
-      sheetRow('Edit card type…', 'Name, topic, weight and more, in Settings.', sheetAct(() => editCardTypeFor(c))),
+      sheetRow('Edit card type…', 'Name, topic, weight and more, in its topic’s settings.', sheetAct(() => editCardTypeFor(c))),
     ])
     : h('div', { class: 'list' }, [h('p', { class: 'sub' }, 'This card type no longer exists.'), topicRow]));
 }
@@ -982,12 +985,22 @@ async function renderSaved() {
 }
 
 // ---------- settings ----------
-const TABS = [['topics', 'Topics'], ['balance', 'Balance'], ['sources', 'Sources'], ['domains', 'Domains'], ['cards', 'Cards']];
+const TABS = [['topics', 'Topics'], ['domains', 'Domains']];
 
-let settingsTab = null;
-async function renderSettings(tab = 'sources') {
-  if (tab !== settingsTab) Object.values(BULK).forEach((b) => { b.select = false; b.sel.clear(); }); // selection never outlives its tab
-  settingsTab = tab;
+const BULK = {}; // per-list UI state (key = list name); survives rerender() so filters and search stay put
+const PAINTS = {}; // repaint functions of the lists on screen, so one list can leave selection mode when another enters it
+let settingsPage = null; // which settings screen is showing; leaving it drops list filters and selection
+let flushRank = null; // set by the Topics screen: saves a pending reorder straight away
+function enterPage(key) {
+  if (key === settingsPage) return;
+  settingsPage = key;
+  for (const k of Object.keys(BULK)) delete BULK[k];
+  for (const k of Object.keys(PAINTS)) delete PAINTS[k];
+  flushRank?.(); flushRank = null;
+}
+
+async function renderSettings(tab = 'topics') {
+  enterPage(tab);
   await loadMeta().catch(() => {});
   const seg = h('div', { class: 'seg', role: 'tablist' }, TABS.map(([k, label]) => h('button', { 'aria-pressed': String(k === tab), onclick: () => { location.hash = `#/settings/${k}`; } }, label)));
   const body = h('div');
@@ -996,10 +1009,15 @@ async function renderSettings(tab = 'sources') {
   view.replaceChildren(seg, body, footer);
   try { await SETTINGS[tab](body); } catch (e) { body.replaceChildren(h('p', { class: 'status' }, e.message)); }
 }
+const renderSettingsRoute = () => {
+  const r = route();
+  return r.arg === 'topic' && Number(r.id) ? renderTopicPage(Number(r.id)) : renderSettings(r.arg === 'domains' ? 'domains' : 'topics');
+};
 const rerender = async () => { // keeps the scroll position; filters and search live in BULK
   feed.dirty = true;
+  if (route().name !== 'settings') return;
   const y = scrollY;
-  await renderSettings(route().arg);
+  await renderSettingsRoute();
   scrollTo(0, y);
 };
 
@@ -1008,18 +1026,17 @@ function toggle(checked, onchange) {
   input.checked = !!checked;
   return h('label', { class: 'toggle', onclick: (e) => e.stopPropagation() }, input, h('span'));
 }
-const rowEl = ({ dot, title, desc, err, right, onclick, check, label, off }) => h('div', {
+const rowEl = ({ dot, title, desc, err, right, left, onclick, check, label, off }) => h('div', {
   class: `row${off ? ' off' : ''}`, onclick, tabindex: 0,
   role: check == null ? 'button' : 'checkbox', 'aria-checked': check == null ? null : String(check), 'aria-label': label,
   onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onclick?.(e); } },
 },
-check == null ? null : tick(check),
+left, check == null ? null : tick(check),
 dot ? h('span', { class: 'dot', style: { '--c': dot } }) : null,
 h('div', { class: 'grow' }, h('div', { class: 'title' }, title), desc ? h('div', { class: `desc${err ? ' err' : ''}` }, desc) : null), right);
 
-// ---------- bulk management (search, filters, collapsible groups, multi-select) ----------
-const BULK = {}; // per-tab UI state; survives rerender() so filters and search stay put
-const bulkState = (tab) => (BULK[tab] ||= { q: '', topic: '', kind: '', status: 'all', select: false, sel: new Set() });
+// ---------- bulk management (search, filters, multi-select) ----------
+const bulkState = (tab) => (BULK[tab] ||= { q: '', kind: '', status: 'all', select: false, sel: new Set() });
 const plural = (n, [one, many]) => `${n} ${n === 1 ? one : many}`;
 const tick = (on) => h('span', { class: `tk${on ? ' on' : ''}`, 'aria-hidden': 'true' });
 
@@ -1033,38 +1050,36 @@ function pickerSheet(title, options, current, onPick) {
 }
 
 /**
- * A settings list with a sticky toolbar (search + filters), optional topic groups that collapse, and a
- * selection mode with a bulk action bar. `spec` describes the data; see SETTINGS.* for examples.
+ * A settings list with a sticky toolbar (search + filters) and a selection mode with a bulk action bar. `spec.tab` is
+ * its unique key (several lists can share a page); see sourceList / cardList for examples.
  */
 function manage(body, spec) {
   const st = bulkState(spec.tab);
   const { items, noun } = spec;
   const statuses = [['all', 'All', () => true], ...spec.statuses];
-  const filterActive = () => !!(st.q.trim() || st.topic || st.kind || st.status !== 'all');
-  let session = {}; // collapse overrides made while a filter is active; reset whenever the filters change
-  const collapsedKey = `collapsed:${spec.tab}`;
+  const filterActive = () => !!(st.q.trim() || st.kind || st.status !== 'all');
 
   const matches = (it) => {
-    if (st.topic && it.topic_id !== +st.topic) return false;
     if (st.kind && it.kind !== st.kind) return false;
     if (!statuses.find(([k]) => k === st.status)[2](it)) return false;
-    const hay = `${spec.search(it)} ${spec.grouped ? topicById(it.topic_id).name : ''}`.toLowerCase();
-    return st.q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w));
+    return st.q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => spec.search(it).toLowerCase().includes(w));
   };
   const shown = () => items.filter(matches);
 
   // ---- toolbar ----
   const search = h('input', { type: 'search', class: 'bulk-search', placeholder: `Search ${noun[1]}`, 'aria-label': `Search ${noun[1]}`, autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false' });
   search.value = st.q;
-  search.addEventListener('input', () => { st.q = search.value; filtersChanged(); });
-  const selectBtn = h('button', { class: 'btn bulk-select', onclick: () => { st.select = !st.select; st.sel.clear(); paint(); } });
+  search.addEventListener('input', () => { st.q = search.value; paint(); });
+  const selectBtn = h('button', { class: 'btn bulk-select', onclick: () => {
+    st.select = !st.select; st.sel.clear();
+    if (st.select) for (const [k, other] of Object.entries(PAINTS)) if (k !== spec.tab && BULK[k]?.select) { BULK[k].select = false; BULK[k].sel.clear(); other(); } // one action bar at a time
+    paint();
+  } });
   const chip = (onclick) => h('button', { class: 'chip', onclick });
-  const topicChip = spec.grouped ? chip(() => pickerSheet('Filter by topic', [['', 'All topics'], ...meta.topics.map((t) => [String(t.id), t.name, t.color])], st.topic,
-    (v) => { st.topic = v; filtersChanged(); })) : null;
   const kindChip = spec.kinds ? chip(() => pickerSheet('Filter by type', [['', 'All types'], ...Object.entries(spec.kinds).map(([k, v]) => [k, v.label])], st.kind,
-    (v) => { st.kind = v; filtersChanged(); })) : null;
-  const statusChips = statuses.map(([k, label]) => { const b = chip(() => { st.status = k; filtersChanged(); }); b.textContent = label; b.dataset.status = k; return b; });
-  const chipsRow = h('div', { class: 'bulk-chips', role: 'group', 'aria-label': 'Filters' }, topicChip, kindChip, statusChips);
+    (v) => { st.kind = v; paint(); })) : null;
+  const statusChips = statuses.map(([k, label]) => { const b = chip(() => { st.status = k; paint(); }); b.textContent = label; b.dataset.status = k; return b; });
+  const chipsRow = h('div', { class: 'bulk-chips', role: 'group', 'aria-label': 'Filters' }, kindChip, statusChips);
   const count = h('span', { class: 'bulk-count', role: 'status' });
   const selAll = h('button', { class: 'linkbtn', onclick: () => { shown().forEach((it) => st.sel.add(it.id)); paint(); } }, 'Select all shown');
   const selNone = h('button', { class: 'linkbtn', onclick: () => { st.sel.clear(); paint(); } }, 'Clear');
@@ -1097,8 +1112,6 @@ function manage(body, spec) {
   const list = h('div', { class: 'bulk-list' });
   body.append(toolbar, list, bar);
 
-  function filtersChanged() { session = {}; paint(); }
-
   function rowFor(it) {
     const r = spec.row(it);
     const common = { ...r, off: it.enabled === false };
@@ -1115,34 +1128,7 @@ function manage(body, spec) {
       }),
     });
   }
-  const groupDefs = () => (meta.topics.map((t) => ({ id: t.id, name: t.name, color: t.color, test: (x) => x.topic_id === t.id })));
-  const addRowEl = (a) => (!st.select && a && !filterActive() ? rowEl({ title: h('span', { class: 'add-row' }, a.label), onclick: a.onclick }) : null);
-
-  function groupEl(t, rows) {
-    const stored = store.get(collapsedKey, {});
-    // Many groups: start collapsed, but never hide matches while searching or filtering.
-    const collapsed = filterActive() ? !!session[t.id] : (t.id in stored ? !!stored[t.id] : groupDefs().length > 5);
-    const off = rows.filter((x) => x.enabled === false).length;
-    const errs = spec.isError ? rows.filter(spec.isError).length : 0;
-    const summary = [String(rows.length), off ? `${off} off` : null, errs ? `${errs} error${errs === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ');
-    const selected = rows.filter((x) => st.sel.has(x.id)).length;
-    const flip = () => {
-      if (filterActive()) session[t.id] = !collapsed;
-      else store.set(collapsedKey, { ...stored, [t.id]: !collapsed });
-      paint(true);
-    };
-    const setGroup = (on) => () => { rows.forEach((x) => (on ? st.sel.add(x.id) : st.sel.delete(x.id))); paint(true); };
-    const a = spec.addRow?.(t);
-    return h('section', { class: 'grp' },
-      h('div', { class: 'grp-h' },
-        h('button', { class: 'grp-toggle', 'aria-expanded': String(!collapsed), 'aria-label': `${t.name}, ${summary.replace(/ · /g, ', ')}`, onclick: flip },
-          h('span', { class: 'chev', 'aria-hidden': 'true' }), t.color ? h('span', { class: 'dot', style: { '--c': t.color } }) : null,
-          h('span', { class: 'grp-name' }, t.name), h('span', { class: 'grp-sum' }, summary + (st.select && selected ? ` · ${selected} selected` : ''))),
-        st.select && rows.length ? h('span', { class: 'grp-sel' },
-          h('button', { class: 'linkbtn', 'aria-label': `Select all in ${t.name}`, onclick: setGroup(true) }, 'All'),
-          h('button', { class: 'linkbtn', 'aria-label': `Select none in ${t.name}`, onclick: setGroup(false) }, 'None')) : null),
-      collapsed ? null : h('div', { class: 'list' }, rows.map(rowFor), addRowEl(a)));
-  }
+  const addRowEl = () => (!st.select && spec.addRow && !filterActive() ? rowEl({ title: h('span', { class: 'add-row' }, spec.addRow.label), onclick: spec.addRow.onclick }) : null);
 
   function paint(keepScroll) {
     const rows = shown();
@@ -1153,9 +1139,7 @@ function manage(body, spec) {
     selectBtn.classList.toggle('primary', st.select);
     selectBtn.setAttribute('aria-pressed', String(st.select));
     selectBtn.setAttribute('aria-label', st.select ? 'Leave selection mode' : `Select ${noun[1]}`);
-    const setChip = (el, label, on) => { if (el) { el.textContent = `${label} ▾`; el.setAttribute('aria-pressed', String(on)); } };
-    setChip(topicChip, st.topic ? topicById(+st.topic).name : 'Topic', !!st.topic);
-    setChip(kindChip, st.kind ? spec.kinds[st.kind]?.label || st.kind : 'Type', !!st.kind);
+    if (kindChip) { kindChip.textContent = `${st.kind ? spec.kinds[st.kind]?.label || st.kind : 'Type'} ▾`; kindChip.setAttribute('aria-pressed', String(!!st.kind)); }
     statusChips.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.status === st.status)));
     count.textContent = `${rows.length} of ${items.length} ${noun[1]}`;
     selAll.hidden = selNone.hidden = !st.select;
@@ -1166,159 +1150,161 @@ function manage(body, spec) {
     actionBtns.forEach((b) => { b.disabled = !st.sel.size; });
 
     const y = keepScroll ? scrollY : null;
-    let content;
-    if (!rows.length && items.length) {
-      content = h('div', { class: 'empty small' }, h('p', {}, `No ${noun[1]} match.`),
-        h('button', { class: 'btn', onclick: () => { Object.assign(st, { q: '', topic: '', kind: '', status: 'all' }); search.value = ''; filtersChanged(); } }, 'Clear search and filters'));
-    } else if (spec.grouped) {
-      content = groupDefs().filter((g) => !st.topic || g.id === +st.topic).map((g) => [g, rows.filter(g.test)])
-        .filter(([, r]) => r.length || (!filterActive() && !st.select)).map(([g, r]) => groupEl(g, r));
-    } else {
-      content = [h('div', { class: 'list' }, rows.map(rowFor), addRowEl(spec.addRow))];
-    }
-    if (spec.footer && !st.select && !filterActive()) content = [...[content].flat(), h('div', { class: 'list', style: { marginTop: '14px' } }, spec.footer())];
-    list.replaceChildren(...[content].flat());
+    list.replaceChildren(!rows.length && items.length
+      ? h('div', { class: 'empty small' }, h('p', {}, `No ${noun[1]} match.`),
+        h('button', { class: 'btn', onclick: () => { Object.assign(st, { q: '', kind: '', status: 'all' }); search.value = ''; paint(); } }, 'Clear search and filters'))
+      : h('div', { class: 'list' }, rows.map(rowFor), addRowEl()));
     list.classList.toggle('selecting', st.select);
     if (y != null) scrollTo(0, y);
   }
+  PAINTS[spec.tab] = paint;
   paint();
 }
 
+/** Apply saved rank changes to the copies of the topics held in memory (settings and feed). */
+function applyPatches(patches) {
+  for (const { id, ...p } of patches) for (const list of [meta.topics, feed.state?.topics || []]) { const x = list.find((y) => y.id === id); if (x) Object.assign(x, p); }
+}
+/** Recompute positions and weights from the stored order and falloff, after topics were added, shown, hidden or deleted. */
+const rebalanceNow = async () => applyPatches(await rebalance(data));
+/** Show a hidden topic at the bottom of the rank. */
+async function showTopic(t) {
+  await data.update('topics', t.id, { enabled: true, position: await data.nextTopicPosition() });
+  await rebalanceNow();
+  feed.dirty = true;
+}
+const topicLink = (id) => { location.hash = `#/settings/topic/${id}`; };
+
 const domainsUi = { q: '', status: 'all' }; // Settings → Domains search and filter, kept across rerenders
 const SETTINGS = {
+  /** Topics as a stack rank: order = priority, and the falloff turns rank into each topic's share of the feed. */
   async topics(body) {
-    const topics = await data.topics();
-    const total = topics.filter((t) => t.enabled).reduce((s, t) => s + t.weight, 0) || 1;
-    body.append(h('p', { class: 'intro' }, topics.length ? 'Topics are the channels in your feed. Set how much each one gets in Balance.' : 'Topics are the channels in your feed. Start from a starter pack or add your own.'));
-    manage(body, {
-      tab: 'topics', noun: ['topic', 'topics'], items: topics,
-      search: (t) => t.name,
-      statuses: [['on', 'Shown', (t) => t.enabled], ['off', 'Hidden', (t) => !t.enabled]],
-      row: (t) => ({
-        dot: t.color, title: t.name,
-        desc: t.enabled ? `${Math.round((t.weight / total) * 100)}% of feed · ${Math.round(t.curated_ratio * 100)}% articles when available` : 'Hidden',
-      }),
-      table: 'topics', onOpen: editTopic,
-      footer: () => [
-        rowEl({ title: h('span', { class: 'add-row' }, '+ Add topic'), onclick: () => editTopic(null) }),
-        rowEl({ title: h('span', { class: 'add-row' }, '+ Add starter pack'), desc: 'Ready-made topics with sources and card types', onclick: openPackPicker }),
-      ],
-      on: { label: 'Show', done: 'Showing' }, off: { label: 'Hide', done: 'Hid' },
-      actions: (ctx) => [
-        ctx.enable(true), ctx.enable(false),
-        ctx.remove((n) => `Delete ${n}? This also deletes all their sources and card types.`),
-      ],
-    });
-  },
-  async balance(body) {
-    const topics = (await data.topics()).filter((t) => t.enabled);
-    if (!topics.length) { body.append(h('p', { class: 'intro' }, 'No visible topics yet. Add a topic or a starter pack first.')); return; }
-    const initial = sharesFromWeights(topics.map((t) => t.weight));
-    const initialPct = toPercents(initial);
-    let shares = initial.slice();
-    const locked = topics.map(() => false);
+    const [topics, stats, gens, stored] = await Promise.all([data.topics(), data.sourceStats(), data.generators(), data.setting('falloff', DEFAULT_FALLOFF)]);
+    let falloff = Number(stored) || DEFAULT_FALLOFF;
+    let savedFalloff = falloff;
+    const ordered = rankOrder(topics);
+    let rank = ordered.filter((t) => t.enabled);
+    const hidden = ordered.filter((t) => !t.enabled);
+    const errored = new Set(stats.filter((s) => s.last_error).map((s) => s.topic_id));
+    const desc = (t) => `${plural(stats.filter((s) => s.topic_id === t.id).length, ['source', 'sources'])} · ${plural(gens.filter((g) => g.topic_id === t.id).length, ['card type', 'card types'])}`;
 
-    const stack = h('div', { class: 'stack', role: 'img', 'aria-label': 'Share of feed by topic' }, topics.map((t) => h('span', { style: { '--c': t.color } })));
-    const save = h('button', { class: 'btn primary' }, 'Save');
-    const state = h('span', { class: 'sub' });
-    const refs = topics.map((t, i) => {
-      const range = h('input', { type: 'range', min: 0, max: 100, step: 1, 'aria-label': `${t.name} share`, oninput: () => change(setShare(shares, locked, i, +range.value)) });
-      const num = h('input', { type: 'number', min: 0, max: 100, step: 1, inputmode: 'numeric', 'aria-label': `${t.name} percent`, onchange: () => change(setShare(shares, locked, i, +num.value)) });
-      const lock = h('button', { class: 'act lock', 'aria-label': `Lock ${t.name}`, 'aria-pressed': 'false', title: 'Lock this share', onclick: () => { locked[i] = !locked[i]; lock.setAttribute('aria-pressed', String(locked[i])); draw(); } }, icon('lock'));
-      return { range, num, lock };
-    });
-    const change = (next) => { shares = next; draw(); };
-    const draw = () => {
-      const pct = toPercents(shares);
-      topics.forEach((t, i) => {
-        const r = refs[i];
-        r.range.value = shares[i]; r.num.value = pct[i];
-        r.range.disabled = locked[i];
-        r.lock.setAttribute('aria-pressed', String(locked[i]));
-        stack.children[i].style.flexGrow = String(shares[i]);
-        stack.children[i].title = `${t.name} ${pct[i]}%`;
-      });
-      const dirty = pct.some((v, i) => v !== initialPct[i]);
-      save.disabled = !dirty;
-      state.textContent = dirty ? 'Unsaved changes' : 'Saved';
-    };
-    save.onclick = async () => {
-      save.disabled = true;
-      const pct = toPercents(shares);
-      try {
-        await Promise.all(topics.map((t, i) => (Math.abs(weightFromPercent(pct[i]) - t.weight) > 0.005 ? data.update('topics', t.id, { weight: weightFromPercent(pct[i]) }) : null)));
-        toast('Balance saved'); rerender();
-      } catch (e) { fail(e); save.disabled = false; }
-    };
-    const even = () => {
-      const lockedSum = shares.reduce((a, v, i) => a + (locked[i] ? v : 0), 0);
-      const free = locked.filter((l) => !l).length;
-      if (free) change(shares.map((v, i) => (locked[i] ? v : (100 - lockedSum) / free)));
-    };
+    body.append(h('p', { class: 'intro' }, topics.length
+      ? 'Your topics in order of priority: the higher a topic sits, the more of your feed it gets. Drag the handle or use the arrows to reorder. Tap a topic to manage its sources and card types.'
+      : 'Topics are the channels in your feed. Start from a starter pack or add your own.'));
 
-    body.append(
-      h('p', { class: 'intro' }, 'How much of your feed each topic gets. The shares always add up to 100%: move one and the others give way in proportion. Lock a topic to hold its share. A topic with nothing left to show is skipped, so real shares can drift a little.'),
-      stack,
-      h('div', { class: 'list' }, topics.map((t, i) => h('div', { class: 'bal-row' },
-        h('div', { class: 'bal-top' }, h('span', { class: 'dot', style: { '--c': t.color } }), h('span', { class: 'grow title' }, t.name), refs[i].lock,
-          h('label', { class: 'pct' }, refs[i].num, '%')),
-        refs[i].range))),
-      h('div', { class: 'toolbar' }, save, h('button', { class: 'btn', onclick: even }, 'Even out'),
-        h('button', { class: 'btn', onclick: () => { shares = initial.slice(); locked.fill(false); draw(); } }, 'Reset'), state),
-    );
-    draw();
-  },
-  async sources(body) {
-    const sources = await data.sourceStats();
-    body.append(h('p', { class: 'intro' }, 'Where articles come from. Strict sources and score thresholds keep the feed useful.'));
-    manage(body, {
-      tab: 'sources', noun: ['source', 'sources'], items: sources, grouped: true, kinds: meta.source_kinds,
-      search: (s) => `${s.name} ${s.config?.url || ''} ${s.include || ''}`,
-      isError: (s) => !!s.last_error,
-      statuses: [
-        ['on', 'On', (s) => s.enabled], ['off', 'Off', (s) => !s.enabled], ['errors', 'Errors', (s) => !!s.last_error],
-        ['read', 'No unread', (s) => !s.unseen_count], ['never', 'Never fetched', (s) => !s.last_fetched],
-      ],
-      row: (s) => ({
-        title: s.name,
-        desc: s.last_error ? `Error: ${s.last_error}` : `${meta.source_kinds[s.kind]?.label || s.kind} · ${s.unseen_count} unread${s.last_fetched ? ` · fetched ${ago(s.last_fetched)} ago` : ' · not fetched yet'}`,
-        err: !!s.last_error,
-      }),
-      table: 'sources', onOpen: editSource,
-      addRow: (t) => ({ label: '+ Add source', onclick: () => editSource({ topic_id: t.id, kind: 'rss', config: {}, weight: 1, enabled: true }) }),
-      on: { label: 'Turn on', done: 'Turned on' }, off: { label: 'Turn off', done: 'Turned off' },
-      actions: (ctx) => [
-        ctx.enable(true), ctx.enable(false),
-        {
-          label: 'Move to topic…', run: (ids) => pickerSheet(`Move ${plural(ids.length, ctx.noun)} to`, meta.topics.map((t) => [t.id, t.name, t.color]), null,
-            (topicId) => ctx.apply(() => data.updateMany('sources', ids, { topic_id: topicId }), `Moved ${plural(ids.length, ctx.noun)} to ${topicById(topicId).name}`)),
-        },
-        {
-          label: 'Weight…', run: (ids) => {
-            const input = h('input', { type: 'number', step: 0.1, min: 0, inputmode: 'decimal', value: 1 });
-            openSheet('Set weight', h('div', {},
-              field(`Weight for ${plural(ids.length, ctx.noun)}`, input, '1 = normal. Higher ranks these sources above others.'),
-              h('button', { class: 'btn primary', onclick: () => { const w = Number(input.value); return w > 0 ? ctx.apply(() => data.updateMany('sources', ids, { weight: w }), `Set weight to ${w} on ${plural(ids.length, ctx.noun)}`) : toast('Enter a weight above 0'); } }, 'Apply')));
-            input.focus(); input.select();
-          },
-        },
-        {
-          label: 'Fetch now', run: (ids, btn) => ctx.apply(async () => {
-            let added = 0, failed = 0, done = 0, next = 0;
-            const worker = async () => {
-              while (next < ids.length) {
-                const id = ids[next++];
-                try { const r = await data.fetcher('fetch_source', { id }); if (r.error) failed++; else added += r.added || 0; } catch { failed++; }
-                btn.textContent = `Fetching ${++done}/${ids.length}…`;
-              }
-            };
-            await Promise.all(Array.from({ length: Math.min(3, ids.length) }, worker));
-            return { msg: `${added} new article${added === 1 ? '' : 's'} from ${plural(ids.length, ctx.noun)}${failed ? ` · ${failed} failed` : ''}` };
-          }),
-        },
-        ctx.remove((n) => `Delete ${n} and all their articles (including saved ones)?`),
-      ],
-    });
+    if (rank.length) {
+      const status = h('span', { class: 'sub rank-status', role: 'status' });
+      const spans = new Map(rank.map((t) => [t.id, h('span', { style: { '--c': t.color } })]));
+      const stack = h('div', { class: 'stack', role: 'img', 'aria-label': 'Share of feed by topic' });
+      const list = h('div', { class: 'list rank-list' });
+      const pcts = new Map();
+      let lastDrag = 0;
+
+      const paintShares = (ids) => {
+        const order = ids.map((id) => rank.find((t) => t.id === id));
+        const shares = sharesFromWeights(rankWeights(order.length, falloff));
+        const pct = toPercents(shares);
+        order.forEach((t, i) => {
+          pcts.get(t.id).textContent = `${pct[i]}%`;
+          spans.get(t.id).style.flexGrow = String(shares[i]);
+          spans.get(t.id).title = `${t.name} ${pct[i]}%`;
+        });
+        stack.append(...order.map((t) => spans.get(t.id)));
+      };
+
+      // Saving: rank → position, falloff → app_settings, both → weight. Debounced; only changed rows are written.
+      let timer = null;
+      let chain = Promise.resolve();
+      const persist = () => {
+        clearTimeout(timer); timer = null;
+        chain = chain.then(async () => {
+          try {
+            if (falloff !== savedFalloff) { await data.setSetting('falloff', falloff); savedFalloff = falloff; }
+            const all = [...rank, ...hidden];
+            const patches = await saveRank(data, all, falloff);
+            for (const { id, ...p } of patches) Object.assign(all.find((t) => t.id === id), p);
+            applyPatches(patches);
+            feed.dirty = true;
+            status.textContent = 'Saved';
+          } catch (e) { status.textContent = 'Not saved'; fail(e); }
+        });
+        return chain;
+      };
+      const scheduleSave = () => { status.textContent = 'Saving…'; clearTimeout(timer); timer = setTimeout(persist, 400); };
+      flushRank = () => (timer ? persist() : chain);
+
+      const commit = (next) => { rank = next; draw(); scheduleSave(); };
+      const move = (t, dir, btn) => {
+        const i = rank.indexOf(t);
+        const next = rank.slice();
+        next.splice(i + dir, 0, ...next.splice(i, 1));
+        commit(next);
+        const row = list.querySelector(`[data-id="${t.id}"]`);
+        const target = row?.querySelector(`.rank-${btn}`);
+        (target?.disabled ? row.querySelector(`.rank-${btn === 'up' ? 'down' : 'up'}`) : target)?.focus();
+      };
+
+      // Dragging: pointer events from the handle, so mouse, touch and pen all work. The row is moved in the DOM
+      // under the pointer and the new order is read back from it on release.
+      const startDrag = (e, row) => {
+        if (e.button > 0) return;
+        e.preventDefault();
+        row.classList.add('dragging');
+        const onMove = (ev) => {
+          if (ev.clientY < 90) scrollBy(0, -12); else if (ev.clientY > innerHeight - 120) scrollBy(0, 12);
+          const next = [...list.children].filter((r) => r !== row).find((r) => { const b = r.getBoundingClientRect(); return ev.clientY < b.top + b.height / 2; });
+          if (next) { if (row.nextSibling !== next) list.insertBefore(row, next); } else if (list.lastChild !== row) list.append(row);
+          paintShares([...list.children].map((r) => Number(r.dataset.id)));
+        };
+        const onEnd = () => {
+          for (const [type, fn] of [['pointermove', onMove], ['pointerup', onEnd], ['pointercancel', onEnd]]) removeEventListener(type, fn);
+          row.classList.remove('dragging');
+          lastDrag = Date.now(); // the release can also arrive as a click on the row
+          const ids = [...list.children].map((r) => Number(r.dataset.id));
+          const before = rank.map((t) => t.id).join();
+          if (ids.join() === before) return;
+          commit(ids.map((id) => rank.find((t) => t.id === id)));
+          list.querySelector(`[data-id="${row.dataset.id}"] .rank-handle`)?.focus();
+        };
+        for (const [type, fn] of [['pointermove', onMove], ['pointerup', onEnd], ['pointercancel', onEnd]]) addEventListener(type, fn); // on window: moving the row in the DOM drops pointer capture
+      };
+
+      const rowFor = (t, i) => {
+        const handle = h('button', { class: 'rank-handle', type: 'button', 'aria-label': `Drag to reorder ${t.name}`, title: 'Drag to reorder', onclick: (e) => e.stopPropagation(), onpointerdown: (e) => startDrag(e, row) }, icon('grip'));
+        const step = (dir, name, ico) => h('button', { class: `act rank-${name}`, type: 'button', 'aria-label': `Move ${t.name} ${name}`, title: `Move ${name}`, disabled: dir < 0 ? i === 0 : i === rank.length - 1, onclick: (e) => { e.stopPropagation(); move(t, dir, name); } }, icon(ico));
+        const pct = h('span', { class: 'rank-pct' });
+        pcts.set(t.id, pct);
+        const row = rowEl({
+          left: handle, dot: t.color, desc: desc(t), right: [pct, step(-1, 'up', 'arrowup'), step(1, 'down', 'arrowdown')],
+          title: [t.name, errored.has(t.id) ? h('span', { class: 'warn-badge', role: 'img', 'aria-label': 'A source has an error', title: 'A source has an error' }, '⚠') : null],
+          onclick: (e) => { if (!e.target.closest('.rank-handle, .act') && Date.now() - lastDrag > 300) topicLink(t.id); },
+        });
+        row.dataset.id = t.id;
+        return row;
+      };
+      const draw = () => { pcts.clear(); list.replaceChildren(...rank.map(rowFor)); paintShares(rank.map((t) => t.id)); };
+
+      const presets = h('div', { class: 'seg falloff', role: 'group', 'aria-label': 'Falloff' }, FALLOFFS.map(([k, label, r]) => h('button', {
+        'data-falloff': k, onclick: () => { falloff = r; markPresets(); paintShares(rank.map((x) => x.id)); scheduleSave(); },
+      }, label)));
+      const markPresets = () => presets.querySelectorAll('button').forEach((b, i) => b.setAttribute('aria-pressed', String(Math.abs(FALLOFFS[i][2] - falloff) < 1e-6)));
+
+      body.append(
+        h('div', { class: 'section-h' }, 'Falloff', h('span', { class: 'grow' }), status),
+        presets,
+        h('p', { class: 'help' }, 'How quickly the share drops down the list. Even gives every topic the same share; Steep gives the top few most of the feed.'),
+        stack, list);
+      markPresets();
+      draw();
+    }
+
+    if (hidden.length) {
+      body.append(h('div', { class: 'section-h' }, 'Hidden'), h('div', { class: 'list hidden-list' }, hidden.map((t) => rowEl({
+        dot: t.color, title: t.name, desc: `Hidden · ${desc(t)}`, off: true, onclick: () => topicLink(t.id),
+        right: h('button', { class: 'btn', 'aria-label': `Show ${t.name}`, onclick: async (e) => { e.stopPropagation(); try { await flushRank?.(); await showTopic(t); rerender(); } catch (err) { fail(err); } } }, 'Show'),
+      }))));
+    }
+
     const fetchBtn = h('button', {
       class: 'btn',
       onclick: async () => {
@@ -1330,7 +1316,11 @@ const SETTINGS = {
         } catch (e) { toast(e.message); fetchBtn.disabled = false; fetchBtn.textContent = 'Fetch all now'; }
       },
     }, 'Fetch all now');
-    body.append(h('div', { class: 'toolbar' }, fetchBtn));
+    body.append(
+      h('div', { class: 'list', style: { marginTop: '18px' } },
+        rowEl({ title: h('span', { class: 'add-row' }, '+ Add topic'), onclick: () => editTopic(null) }),
+        rowEl({ title: h('span', { class: 'add-row' }, '+ Add starter pack'), desc: 'Ready-made topics with sources and card types', onclick: openPackPicker })),
+      h('div', { class: 'toolbar' }, fetchBtn));
   },
   async domains(body) {
     const domains = await data.domainStats();
@@ -1363,21 +1353,113 @@ const SETTINGS = {
     }
     draw();
   },
-  async cards(body) {
-    const gens = await data.generators();
-    body.append(h('p', { class: 'intro' }, 'Practice cards made from code and your own decks and lists. They keep the feed going when articles run out. Decks are created and edited from a Flashcards or Notes card type.'));
-    manage(body, {
-      tab: 'cards', noun: ['card type', 'card types'], items: gens, grouped: true, kinds: meta.generator_kinds,
-      search: (g) => `${g.name} ${meta.generator_kinds[g.kind]?.label || g.kind}`,
-      statuses: [['on', 'On', (g) => g.enabled], ['off', 'Off', (g) => !g.enabled]],
-      row: (g) => ({ title: g.name, desc: `${meta.generator_kinds[g.kind]?.label || g.kind} · weight ${(+g.weight).toFixed(1)}` }),
-      table: 'generators', onOpen: editGenerator,
-      addRow: (t) => ({ label: '+ Add card type', onclick: () => editGenerator({ topic_id: t.id, kind: 'prompts', config: {}, weight: 1, enabled: true }) }),
-      on: { label: 'Turn on', done: 'Turned on' }, off: { label: 'Turn off', done: 'Turned off' },
-      actions: (ctx) => [ctx.enable(true), ctx.enable(false), ctx.remove((n) => `Delete ${n}?`)],
-    });
-  },
 };
+
+// ---------- topic page: one topic's settings, sources and card types ----------
+function sourceList(t, sources) {
+  return {
+    tab: `sources:${t.id}`, noun: ['source', 'sources'], items: sources, kinds: meta.source_kinds,
+    search: (s) => `${s.name} ${s.config?.url || ''} ${s.include || ''}`,
+    statuses: [
+      ['on', 'On', (s) => s.enabled], ['off', 'Off', (s) => !s.enabled], ['errors', 'Errors', (s) => !!s.last_error],
+      ['read', 'No unread', (s) => !s.unseen_count], ['never', 'Never fetched', (s) => !s.last_fetched],
+    ],
+    row: (s) => ({
+      title: s.name,
+      desc: s.last_error ? `Error: ${s.last_error}` : `${meta.source_kinds[s.kind]?.label || s.kind} · ${s.unseen_count} unread${s.last_fetched ? ` · fetched ${ago(s.last_fetched)} ago` : ' · not fetched yet'}`,
+      err: !!s.last_error,
+    }),
+    table: 'sources', onOpen: editSource,
+    addRow: { label: '+ Add source', onclick: () => editSource({ topic_id: t.id, kind: 'rss', config: {}, weight: 1, enabled: true }) },
+    on: { label: 'Turn on', done: 'Turned on' }, off: { label: 'Turn off', done: 'Turned off' },
+    actions: (ctx) => [
+      ctx.enable(true), ctx.enable(false),
+      {
+        label: 'Move to topic…', run: (ids) => pickerSheet(`Move ${plural(ids.length, ctx.noun)} to`, meta.topics.map((x) => [x.id, x.name, x.color]), null,
+          (topicId) => ctx.apply(() => data.updateMany('sources', ids, { topic_id: topicId }), `Moved ${plural(ids.length, ctx.noun)} to ${topicById(topicId).name}`)),
+      },
+      {
+        label: 'Weight…', run: (ids) => {
+          const input = h('input', { type: 'number', step: 0.1, min: 0, inputmode: 'decimal', value: 1 });
+          openSheet('Set weight', h('div', {},
+            field(`Weight for ${plural(ids.length, ctx.noun)}`, input, '1 = normal. Higher ranks these sources above others.'),
+            h('button', { class: 'btn primary', onclick: () => { const w = Number(input.value); return w > 0 ? ctx.apply(() => data.updateMany('sources', ids, { weight: w }), `Set weight to ${w} on ${plural(ids.length, ctx.noun)}`) : toast('Enter a weight above 0'); } }, 'Apply')));
+          input.focus(); input.select();
+        },
+      },
+      {
+        label: 'Fetch now', run: (ids, btn) => ctx.apply(async () => {
+          let added = 0, failed = 0, done = 0, next = 0;
+          const worker = async () => {
+            while (next < ids.length) {
+              const id = ids[next++];
+              try { const r = await data.fetcher('fetch_source', { id }); if (r.error) failed++; else added += r.added || 0; } catch { failed++; }
+              btn.textContent = `Fetching ${++done}/${ids.length}…`;
+            }
+          };
+          await Promise.all(Array.from({ length: Math.min(3, ids.length) }, worker));
+          return { msg: `${added} new article${added === 1 ? '' : 's'} from ${plural(ids.length, ctx.noun)}${failed ? ` · ${failed} failed` : ''}` };
+        }),
+      },
+      ctx.remove((n) => `Delete ${n} and all their articles (including saved ones)?`),
+    ],
+  };
+}
+
+function cardList(t, gens) {
+  return {
+    tab: `cards:${t.id}`, noun: ['card type', 'card types'], items: gens, kinds: meta.generator_kinds,
+    search: (g) => `${g.name} ${meta.generator_kinds[g.kind]?.label || g.kind}`,
+    statuses: [['on', 'On', (g) => g.enabled], ['off', 'Off', (g) => !g.enabled]],
+    row: (g) => ({ title: g.name, desc: `${meta.generator_kinds[g.kind]?.label || g.kind} · weight ${(+g.weight).toFixed(1)}` }),
+    table: 'generators', onOpen: editGenerator,
+    addRow: { label: '+ Add card type', onclick: () => editGenerator({ topic_id: t.id, kind: 'prompts', config: {}, weight: 1, enabled: true }) },
+    on: { label: 'Turn on', done: 'Turned on' }, off: { label: 'Turn off', done: 'Turned off' },
+    actions: (ctx) => [ctx.enable(true), ctx.enable(false), ctx.remove((n) => `Delete ${n}?`)],
+  };
+}
+
+async function renderTopicPage(id) {
+  enterPage(`topic:${id}`);
+  await loadMeta().catch(() => {});
+  const t = meta.topics.find((x) => x.id === id);
+  const head = h('div', { class: 'page-head' },
+    h('button', { class: 'reader-back', onclick: () => { location.hash = '#/settings/topics'; }, 'aria-label': 'Back to topics' }, icon('back'), h('span', {}, 'Topics')),
+    t ? h('span', { class: 'dot', style: { '--c': t.color } }) : null, h('h2', { class: 'page-title' }, t ? t.name : 'Topic'));
+  const body = h('div');
+  view.replaceChildren(head, body);
+  if (!t) { body.append(h('div', { class: 'empty small' }, h('p', {}, 'That topic no longer exists.'))); return; }
+  try {
+    const [stats, gens] = await Promise.all([data.sourceStats(), data.generators()]);
+    const visible = rankOrder(meta.topics).filter((x) => x.enabled);
+    const total = visible.reduce((s, x) => s + x.weight, 0) || 1;
+    const where = t.enabled ? `#${visible.indexOf(t) + 1} of ${visible.length} · ${Math.round((t.weight / total) * 100)}% of feed` : 'Hidden · no share of the feed';
+    const flip = async () => {
+      try {
+        if (t.enabled) { await data.update('topics', t.id, { enabled: false }); await rebalanceNow(); toast(`Hidden ${t.name}`); } else { await showTopic(t); toast(`Showing ${t.name}`); }
+        rerender();
+      } catch (e) { fail(e); }
+    };
+    body.append(
+      h('div', { class: 'section-h' }, 'Topic settings'),
+      h('div', { class: 'list' }, rowEl({
+        dot: t.color, title: t.name, desc: `${where} · ${Math.round(t.curated_ratio * 100)}% articles`,
+        onclick: () => editTopic(t), right: h('button', { class: 'btn', 'aria-label': `Edit ${t.name}`, onclick: (e) => { e.stopPropagation(); editTopic(t); } }, 'Edit'),
+      })),
+      h('div', { class: 'toolbar' },
+        h('button', { class: 'btn topic-flip', onclick: flip }, t.enabled ? 'Hide topic' : 'Show topic'),
+        h('button', { class: 'btn danger', onclick: () => deleteRow('topics', t, `"${t.name}" and all its sources and card types`, async () => { await rebalanceNow(); location.hash = '#/settings/topics'; }) }, 'Delete topic')),
+      h('div', { class: 'section-h' }, 'Sources'),
+      h('p', { class: 'intro' }, 'Where this topic’s articles come from. Strict sources and score thresholds keep the feed useful.'));
+    const srcBox = h('div');
+    body.append(srcBox, h('div', { class: 'section-h' }, 'Card types'),
+      h('p', { class: 'intro' }, 'Practice cards made from code and your own decks and lists. They keep the feed going when articles run out. Decks are created and edited from a Flashcards or Notes card type.'));
+    const cardBox = h('div');
+    body.append(cardBox);
+    manage(srcBox, sourceList(t, stats.filter((s) => s.topic_id === id)));
+    manage(cardBox, cardList(t, gens.filter((g) => g.topic_id === id)));
+  } catch (e) { body.replaceChildren(h('p', { class: 'status' }, e.message)); }
+}
 
 // ---------- sheet + forms ----------
 function openSheet(title, content) {
@@ -1450,6 +1532,7 @@ async function saveRow(table, row, values) {
     else {
       if (table === 'topics') values.position = await data.nextTopicPosition();
       const row = await data.insert(table, values);
+      if (table === 'topics') await rebalanceNow();
       if (table === 'sources') {
         // Fetch a new source straight away instead of waiting for the hourly job.
         data.fetcher('fetch_source', { id: row.id })
@@ -1460,10 +1543,12 @@ async function saveRow(table, row, values) {
     closeSheet(); toast('Saved'); rerender();
   } catch (e) { toast(e.message); }
 }
-async function deleteRow(table, row, what) {
+/** Confirm, delete, then `after()` (default: re-render the settings page). */
+async function deleteRow(table, row, what, after = rerender) {
   if (!confirm(`Delete ${what}?`)) return;
   try { await data.remove(table, row.id); } catch (e) { return fail(e); }
-  closeSheet(); toast('Deleted'); rerender();
+  closeSheet(); toast('Deleted');
+  try { await after(); } catch (e) { fail(e); }
 }
 
 async function openPackPicker() {
@@ -1498,22 +1583,17 @@ async function openPackPicker() {
 }
 
 function editTopic(t) {
-  const active = meta.topics.filter((x) => x.enabled);
-  // A new topic starts with an average share; fine-tune it in Balance.
-  t ||= { name: '', color: '#64748b', weight: active.length ? Math.round((active.reduce((a, x) => a + x.weight, 0) / active.length) * 100) / 100 : 2, curated_ratio: 0.5, enabled: true };
+  // A new topic joins the bottom of the rank; reorder it on the Topics screen.
+  t ||= { name: '', color: '#64748b', curated_ratio: 0.5, enabled: true };
   const name = h('input', { type: 'text', value: t.name, placeholder: 'e.g. Chess' });
   const color = h('input', { type: 'color', value: t.color });
   const rOut = h('b', {}, `${Math.round(t.curated_ratio * 100)}%`);
   const ratio = h('input', { type: 'range', min: 0, max: 1, step: 0.05, value: t.curated_ratio, oninput: () => { rOut.textContent = `${Math.round(ratio.value * 100)}%`; } });
-  const total = active.reduce((a, x) => a + x.weight, 0) || 1;
-  const share = t.id && t.enabled ? `${Math.round((t.weight / total) * 100)}% of your feed` : null;
   openSheet(t.id ? 'Edit topic' : 'New topic', h('div', {},
     field('Name', name), field('Colour', color),
-    share ? h('div', { class: 'field' }, h('span', {}, 'Share of feed'), h('div', { class: 'sub' }, share, ' · ', h('button', { class: 'link', onclick: () => { location.hash = '#/settings/balance'; } }, 'change in Balance'))) : null,
     field(h('span', {}, 'Articles vs practice cards: ', rOut), ratio, 'Chance each slot is an article when unread articles exist; otherwise it is a practice card.'),
     h('div', { class: 'toolbar' },
-      h('button', { class: 'btn primary', onclick: () => name.value.trim() ? saveRow('topics', t, { name: name.value.trim(), color: color.value, weight: t.weight, curated_ratio: +ratio.value, enabled: t.enabled }) : toast('Name is required') }, 'Save'),
-      t.id ? h('button', { class: 'btn danger', onclick: () => deleteRow('topics', t, `"${t.name}" and all its sources and card types`) }, 'Delete') : null)));
+      h('button', { class: 'btn primary', onclick: () => name.value.trim() ? saveRow('topics', t, { name: name.value.trim(), color: color.value, curated_ratio: +ratio.value, enabled: t.enabled }) : toast('Name is required') }, 'Save'))));
 }
 
 function editSource(s) {
@@ -1647,8 +1727,8 @@ async function editDeck(d, opts = {}) {
 
 // ---------- routing ----------
 function route() {
-  const [, name = '', arg] = location.hash.replace(/^#/, '').split('/');
-  return { name: name || 'feed', arg };
+  const [, name = '', arg, id] = location.hash.replace(/^#/, '').split('/');
+  return { name: name || 'feed', arg, id };
 }
 let routeCount = 0;
 function onRoute() {
@@ -1664,7 +1744,12 @@ function onRoute() {
   closeSheet();
   if (reading) renderReader(Number(r.arg));
   else if (r.name === 'saved') renderSaved();
-  else if (r.name === 'settings') renderSettings(r.arg === 'decks' ? 'cards' : TABS.some(([k]) => k === r.arg) ? r.arg : 'sources');
+  else if (r.name === 'settings') {
+    // Balance, Sources, Cards and Decks now live under Topics; anything unknown lands there too.
+    const known = r.arg === 'domains' || r.arg === 'topics' || (r.arg === 'topic' && Number(r.id));
+    if (!known) history.replaceState(null, '', '#/settings/topics');
+    renderSettingsRoute();
+  }
   else renderFeed();
 }
 window.addEventListener('hashchange', onRoute);

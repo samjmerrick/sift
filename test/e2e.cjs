@@ -68,7 +68,7 @@ const pickTopics = async (p, names) => {
   await p.click('text=+ Add starter pack');
   await p.waitForSelector('.sheet .row:has-text("Russian")');
   await p.waitForTimeout(500); await shot('packs');
-  for (const name of ['AI & machine learning', 'Russian', 'Guitar', 'Piano & music theory']) {
+  for (const name of ['AI', 'Russian', 'Guitar', 'Piano & music theory']) {
     await p.click(`.sheet .row:has-text("${name}") button`);
     await p.waitForSelector(`.sheet .row:has-text("${name}") button:has-text("Added")`);
   }
@@ -162,11 +162,119 @@ const pickTopics = async (p, names) => {
   await p.waitForTimeout(400);
   assert((await sql`select enabled from generators where id = ${genId}`)[0].enabled === true, 'undo re-enables the card type');
 
-  console.log('settings');
+  console.log('feed menu: edit and hide topic');
+  await p.click('.card[data-generator] .act.more >> nth=0');
+  await p.click('#sheet .row:has-text("Edit card type")');
+  await p.waitForSelector('#sheet-title:has-text("Edit card type")');
+  assert(p.url().includes('#/settings/topic/'), 'Edit card type… opens the editor on that topic’s page');
+  await p.click('.sheet-head [data-close]');
+  await p.click('a[data-tab=feed]');
+  await p.waitForSelector('.k-article');
+  const srcCardId = await p.$eval('.k-article[data-source]', (el) => el.dataset.source);
+  await p.click(`.k-article[data-source="${srcCardId}"] .act.more >> nth=0`);
+  await p.click('#sheet .row:has-text("Edit source")');
+  await p.waitForSelector('#sheet-title:has-text("Edit source")');
+  assert(p.url().includes('#/settings/topic/'), 'Edit source… opens the editor on that topic’s page');
+  await p.click('.sheet-head [data-close]');
+  await p.click('a[data-tab=feed]');
+  await p.waitForSelector('.k-article');
+  const hidTopic = await p.$eval('.k-article[data-topic]', (el) => el.dataset.topic);
+  const hidSource = await p.$eval(`.k-article[data-topic="${hidTopic}"]`, (el) => el.dataset.source);
+  await p.click(`.k-article[data-source="${hidSource}"] .act.more >> nth=0`);
+  await p.click('#sheet .row:has-text("Hide topic")');
+  await p.waitForSelector('.toast.show:has-text("Hidden")');
+  await p.waitForTimeout(400);
+  const visibleW = (await sql`select weight from topics where enabled order by position`).map((r) => Number(r.weight));
+  assert(visibleW.length === 3 && Math.abs(visibleW[2] - 1.28) < 1e-4, 'hiding a topic from the feed rebalances the remaining weights');
+  await p.click('.toast button:has-text("Undo")');
+  await p.waitForTimeout(500);
+  assert((await sql`select count(*)::int n from topics where enabled`)[0].n === 4 && (await sql`select weight from topics where enabled order by position desc limit 1`)[0].weight > 1, 'undo restores the topic and its weight');
+
+  console.log('settings: topics as a stack rank');
   await p.click('a[data-tab=settings]');
-  await p.waitForSelector('.row');
-  await shot('sources');
-  await p.click('.list >> nth=0 >> text=+ Add source');
+  await p.waitForSelector('.rank-list .row');
+  assert((await p.$$('.seg:not(.falloff) button')).length === 2 && (await p.$$eval('.seg:not(.falloff) button', (b) => b.map((x) => x.textContent))).join() === 'Topics,Domains', 'Settings has only the Topics and Domains tabs');
+  const rankNames = () => p.$$eval('.rank-list .row .title', (t) => t.map((x) => x.firstChild.textContent));
+  const dbRank = async () => (await sql`select name, position, weight from topics where enabled order by position`).map((r) => ({ ...r, weight: Number(r.weight) }));
+  const waitSaved = () => p.waitForSelector('.rank-status:text-is("Saved")');
+  const initial = await rankNames();
+  assert(initial.length === 4, `topics are listed in rank order (${initial.join(' > ')})`);
+  assert((await p.$eval('.rank-list .row .desc', (d) => d.textContent)).includes('sources'), 'each row shows its source and card type counts');
+  const pcts = await p.$$eval('.rank-pct', (e) => e.map((x) => parseInt(x.textContent)));
+  assert(pcts.reduce((a, b) => a + b, 0) === 100 && pcts[0] > pcts[3], `live shares add up to 100% and fall down the list (${pcts.join(', ')})`);
+  assert((await p.getAttribute('.falloff button:has-text("Smooth")', 'aria-pressed')) === 'true', 'Smooth is the default falloff');
+  await p.waitForSelector('.toast.show', { state: 'hidden' }).catch(() => {});
+  await shot('topics-rank');
+
+  // Reorder with the arrows.
+  const first = initial[0];
+  await p.click(`button[aria-label="Move ${first} down"]`);
+  await p.waitForFunction((n) => document.querySelectorAll('.rank-list .row .title')[1]?.firstChild.textContent === n, first);
+  await waitSaved();
+  let rows = await dbRank();
+  assert(rows[1].name === first && rows.every((r, i) => r.position === i), 'moving a topic down saves positions 0..n-1');
+  const expectW = (ratio) => rows.every((r, i) => Math.abs(r.weight - Math.round(2 * ratio ** i * 1e4) / 1e4) < 1e-4);
+  assert(expectW(0.8), 'weights follow rank with the Smooth falloff (2, 1.6, 1.28, …)');
+  assert((await p.evaluate(() => document.activeElement?.getAttribute('aria-label'))) === `Move ${first} down`, 'focus stays on the arrow just used');
+  await p.click(`button[aria-label="Move ${first} up"]`);
+  await waitSaved();
+  assert((await dbRank())[0].name === first, 'the arrows move it back up');
+  assert(await p.isDisabled(`button[aria-label="Move ${first} up"]`), 'the top topic cannot move up');
+
+  // Falloff presets.
+  await p.click('.falloff button:has-text("Steep")');
+  await p.waitForFunction(() => document.querySelector('.rank-status')?.textContent === 'Saved');
+  rows = await dbRank();
+  assert(expectW(0.7), 'the Steep preset rewrites the weights');
+  assert(Number((await sql`select value from app_settings where key = 'falloff'`)[0].value) === 0.7, 'the falloff is stored in app_settings');
+  const steep = await p.$$eval('.rank-pct', (e) => e.map((x) => parseInt(x.textContent)));
+  assert(steep[0] > pcts[0], `Steep gives the top topic a bigger share (${steep[0]}% vs ${pcts[0]}%)`);
+  await p.click('.falloff button:has-text("Even")');
+  await p.waitForFunction(() => /^(\d+)%$/.test(document.querySelector('.rank-pct').textContent) && new Set([...document.querySelectorAll('.rank-pct')].map((x) => x.textContent)).size === 1);
+  await waitSaved();
+  rows = await dbRank();
+  assert(expectW(1) && Number((await sql`select value from app_settings where key = 'falloff'`)[0].value) === 1, 'Even gives every topic the same weight');
+  await p.click('.falloff button:has-text("Smooth")');
+  await p.waitForFunction(() => document.querySelectorAll('.rank-pct')[0].textContent !== document.querySelectorAll('.rank-pct')[1].textContent);
+  await waitSaved();
+  rows = await dbRank();
+  assert(expectW(0.8), 'back to Smooth');
+
+  // Drag the first topic's handle below the second with the mouse.
+  const before = await rankNames();
+  const hb = await p.locator('.rank-list .row').nth(0).locator('.rank-handle').boundingBox();
+  const r1 = await p.locator('.rank-list .row').nth(1).boundingBox();
+  await p.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2);
+  await p.mouse.down();
+  await p.mouse.move(hb.x + hb.width / 2, hb.y + hb.height / 2 + 20, { steps: 3 });
+  await p.mouse.move(hb.x + hb.width / 2, r1.y + r1.height * 0.9, { steps: 6 });
+  await p.mouse.up();
+  await p.waitForFunction((n) => document.querySelectorAll('.rank-list .row .title')[1]?.firstChild.textContent === n, before[0]);
+  await waitSaved();
+  rows = await dbRank();
+  assert(rows[0].name === before[1] && rows[1].name === before[0] && expectW(0.8), 'dragging a handle reorders and saves positions and weights');
+  assert(p.url().endsWith('#/settings/topics'), 'a drag does not open the topic page');
+
+  console.log('settings: topic page');
+  await p.click('.rank-list .row:has-text("Russian") .title');
+  await p.waitForSelector('.page-title:text-is("Russian")');
+  assert(p.url().includes('#/settings/topic/'), 'tapping a row opens its topic page');
+  await p.waitForFunction(() => document.querySelectorAll('.bulk-toolbar').length === 2).catch(() => {});
+  assert((await p.$$('.bulk-toolbar')).length === 2, 'the topic page has a toolbar for sources and one for card types');
+  const russianSources = await sql`select name from sources where topic_id = (select id from topics where name = 'Russian')`;
+  assert((await p.$$eval('.bulk-list .row .title', (t) => t.map((x) => x.textContent))).includes(russianSources[0].name), 'sources of this topic are listed');
+  assert(!(await p.$('.bulk-chips .chip:has-text("Topic")')), 'there is no topic filter on a topic page');
+  await shot('topic-page');
+  await p.locator('.bulk-toolbar >> nth=1').scrollIntoViewIfNeeded();
+  await p.waitForTimeout(200);
+  await shot('topic-page-cards');
+  await p.click('.reader-back');
+  await p.waitForSelector('.rank-list');
+
+  await p.click('.rank-list .row:has-text("AI") .title');
+  await p.waitForSelector('.page-title:text-is("AI")');
+  await p.waitForSelector('.bulk-toolbar');
+  await p.click('.list >> nth=1 >> text=+ Add source');
   await p.fill('.sheet .field:has-text("Feed URL") input', feedUrl);
   await p.click('.sheet button:has-text("Preview")');
   await p.waitForFunction(() => document.querySelector('.preview')?.textContent.match(/pass your filters|rror|failed/i), null, { timeout: 15000 })
@@ -176,10 +284,11 @@ const pickTopics = async (p, names) => {
   await shot('preview');
   await p.click('.sheet .btn.primary');
   await p.waitForSelector('.toast.show:has-text("new from")');
-  const [src] = await sql`select * from sources where config->>'url' = ${feedUrl}`;
-  assert(src && src.name === '127.0.0.1' && src.enabled === true, 'new source saved with a default name, enabled');
+  const [src] = await sql`select s.*, t.name as topic from sources s join topics t on t.id = s.topic_id where config->>'url' = ${feedUrl}`;
+  assert(src && src.name === '127.0.0.1' && src.enabled === true && src.topic === 'AI', 'new source saved in this topic with a default name, enabled');
   const [fetched] = await sql`select count(*)::int n from items where source_id = ${src.id}`;
   assert(fetched.n === 1, 'a new source is fetched immediately');
+  assert(p.url().includes('#/settings/topic/') && (await p.isVisible('.page-title:text-is("AI")')), 'saving stays on the topic page');
   await p.click('.row:has-text("127.0.0.1")');
   await p.click('.sheet button:has-text("Fetch now")');
   await p.waitForFunction(() => /^\d+ new$/.test(document.querySelector('.toast.show')?.textContent || ''));
@@ -187,51 +296,37 @@ const pickTopics = async (p, names) => {
   assert(toastText.includes('0 new'), `fetch now works and de-duplicates (toast: ${toastText})`);
   await p.click('.sheet-head [data-close]');
 
-  await p.click('.seg button:has-text("Topics")');
-  await p.waitForSelector('text=+ Add topic');
-  await p.click('text=+ Add topic');
-  await p.fill('.sheet input[type=text]', 'Chess');
-  await p.click('.sheet .btn.primary');
-  await p.waitForTimeout(500);
-  const titles = await p.$$eval('.row .title', (t) => t.map((x) => x.textContent));
-  assert(titles.indexOf('Chess') === 4, 'new topic is added at the end');
-
-  await p.click('.seg button:has-text("Cards")');
-  await p.waitForSelector('.grp-name:text-is("Chess")');
-  await p.click('.grp:has(.grp-name:text-is("Chess")) >> text=+ Add card type');
-  await p.selectOption('.sheet select >> nth=0', 'prompts');
-  await p.fill('.sheet textarea', 'Learn the Italian opening\nDo 5 tactics puzzles');
-  await p.click('.sheet .btn.primary');
-  await p.waitForTimeout(500);
-  const [gen] = await sql`select g.* from generators g join topics t on t.id = g.topic_id where t.name = 'Chess'`;
-  assert(gen?.config?.lines?.includes('Italian'), 'card type created with its config');
-
   console.log('bulk management');
-  await p.click('.seg button:has-text("Sources")');
-  await p.waitForSelector('.intro:has-text("Where articles")');
-  await p.waitForSelector('.bulk-toolbar');
-  await p.fill('.bulk-search', 'hacker');
-  const hackerIds = (await sql`select id from sources where name ilike '%hacker%'`).map((r) => r.id);
+  const sourceBox = '.bulk-toolbar >> nth=0';
+  await p.fill('.bulk-search >> nth=0', 'hacker');
+  const hackerIds = (await sql`select s.id from sources s join topics t on t.id = s.topic_id where t.name = 'AI' and s.name ilike '%hacker%'`).map((r) => r.id);
   await p.waitForFunction((n) => document.querySelector('.bulk-count')?.textContent.startsWith(n + ' of'), hackerIds.length);
-  assert(true, 'search narrows the source list');
-  await p.click('.bulk-select');
-  await p.click('text=Select all shown');
+  assert(hackerIds.length >= 1, 'search narrows the source list');
+  await p.click('.bulk-select >> nth=0');
+  await p.click('text=Select all shown >> nth=0');
   assert((await p.textContent('.bulk-bar-n')).startsWith(`${hackerIds.length} selected`), 'select all shown selects the matches');
+  await p.click('.bulk-select >> nth=1');
+  assert((await p.$$('.bulk-bar:not([hidden])')).length === 1 && (await p.textContent('.bulk-select >> nth=0')) === 'Select', 'selecting in card types leaves selection mode in sources: one action bar at a time');
+  await p.click('.bulk-select >> nth=1'); // leave
+  await p.click('.bulk-select >> nth=0');
+  await p.click('text=Select all shown >> nth=0');
   await shot('bulk-select');
   await p.click('.bulk-actions >> text=Turn off');
   await p.waitForSelector('.toast.show:has-text("Turned off")');
   await p.waitForTimeout(400);
   const [offN] = await sql`select count(*)::int n from sources where id = any(${hackerIds}) and not enabled`;
   assert(offN.n === hackerIds.length, 'bulk turn off updates every selected source');
-  assert((await p.inputValue('.bulk-search')) === 'hacker' && !(await p.$('.bulk-bar:not([hidden])')), 'search is kept and selection mode ends after a bulk action');
-  await p.click('.bulk-select');
-  await p.click('text=Select all shown');
+  assert((await p.inputValue('.bulk-search >> nth=0')) === 'hacker' && !(await p.$('.bulk-bar:not([hidden])')), 'search is kept and selection mode ends after a bulk action');
+  await p.click('.bulk-select >> nth=0');
+  await p.click('text=Select all shown >> nth=0');
   await p.click('.bulk-actions >> text=Turn on');
   await p.waitForTimeout(600);
   const [offAfter] = await sql`select count(*)::int n from sources where id = any(${hackerIds}) and not enabled`;
   assert(offAfter.n === 0, 'bulk turn on restores them');
+  await p.fill('.bulk-search >> nth=0', '');
 
   console.log('domains');
+  await p.click('a[data-tab=settings]');
   await p.click('.seg button:has-text("Domains")');
   await p.waitForSelector('.row[data-domain="sample.test"]');
   const domDesc = await p.textContent('.row[data-domain="sample.test"] .desc');
@@ -248,14 +343,33 @@ const pickTopics = async (p, names) => {
   await p.click('button[aria-label="Unmute sample.test"]');
   await p.waitForSelector('.empty:has-text("No domains match")');
   assert((await sql`select count(*)::int n from muted_domains`)[0].n === 0, 'unmuting a domain is stored');
-  assert((await p.$$('button:has-text("Muted domains")')).length === 0, 'the old Muted domains footer button is gone');
   await p.click('.bulk-chips .chip:has-text("All")');
+
+  console.log('new topic and card type');
+  await p.click('.seg button:has-text("Topics")');
+  await p.waitForSelector('text=+ Add topic');
+  await p.click('text=+ Add topic');
+  await p.fill('.sheet input[type=text]', 'Chess');
+  await p.click('.sheet .btn.primary');
+  await p.waitForFunction(() => [...document.querySelectorAll('.rank-list .row .title')].some((t) => t.firstChild.textContent === 'Chess'));
+  const titles = await rankNames();
+  assert(titles.indexOf('Chess') === 4, 'new topic joins the bottom of the rank');
+  rows = await dbRank();
+  assert(rows[4].name === 'Chess' && expectW(0.8), 'adding a topic rebalances the weights');
+  await p.click('.rank-list .row:has-text("Chess") .title');
+  await p.waitForSelector('.page-title:text-is("Chess")');
+  await p.waitForSelector('.bulk-toolbar >> nth=1');
+  await p.click('.bulk-list >> nth=1 >> text=+ Add card type');
+  await p.selectOption('.sheet select >> nth=0', 'prompts');
+  await p.fill('.sheet textarea', 'Learn the Italian opening\nDo 5 tactics puzzles');
+  await p.click('.sheet .btn.primary');
+  await p.waitForTimeout(500);
+  const [gen] = await sql`select g.* from generators g join topics t on t.id = g.topic_id where t.name = 'Chess'`;
+  assert(gen?.config?.lines?.includes('Italian'), 'card type created with its config');
 
   console.log('decks from the card type editor');
   assert((await p.$$('.seg button:has-text("Decks")')).length === 0, 'there is no separate Decks tab');
-  await p.click('.seg button:has-text("Cards")');
-  await p.waitForSelector('.grp-name:text-is("Chess")');
-  await p.click('.grp:has(.grp-name:text-is("Chess")) >> text=+ Add card type');
+  await p.click('.bulk-list >> nth=1 >> text=+ Add card type');
   await p.selectOption('.sheet select >> nth=0', 'flashcards');
   assert(await p.isDisabled('.sheet .deck-edit'), 'Edit deck is disabled until a deck is chosen');
   await p.fill('.sheet .field:has-text("Name") input[type=text]', 'Opening cards'); // survives the round trip to the deck editor
@@ -284,7 +398,7 @@ const pickTopics = async (p, names) => {
   assert(fc && fc.config.deck_id === Number(openings.id), 'the flashcards card type points at the new deck');
 
   // A notes card type on the same deck, then removing a scratch deck and returning to the editor.
-  await p.click('.grp:has(.grp-name:text-is("Chess")) >> text=+ Add card type');
+  await p.click('.bulk-list >> nth=1 >> text=+ Add card type');
   await p.selectOption('.sheet select >> nth=0', 'notes');
   await p.selectOption('.sheet .deck-pick select', String(openings.id));
   await p.click('.sheet .btn.primary:has-text("Save")');
@@ -303,9 +417,43 @@ const pickTopics = async (p, names) => {
   await p.waitForSelector('#sheet-title:has-text("Edit card type")');
   assert((await p.inputValue('.sheet .deck-pick select')) === '' && (await sql`select count(*)::int n from decks where name = 'Scratch'`)[0].n === 0, 'deleting a deck returns to the card type editor with no deck chosen');
   await p.click('.sheet-head [data-close]');
-  await p.evaluate(() => { location.hash = '#/settings/decks'; });
-  await p.waitForSelector('.intro:has-text("Decks are created and edited")');
-  assert(true, '#/settings/decks falls back to the Cards tab');
+
+  console.log('hide, show and delete a topic');
+  await p.click('.topic-flip');
+  await p.waitForSelector('.topic-flip:has-text("Show topic")');
+  assert((await sql`select enabled from topics where name = 'Chess'`)[0].enabled === false, 'Hide topic hides it');
+  assert((await dbRank()).length === 4 && expectW(0.8), 'hiding a topic rebalances the rest');
+  await p.click('.reader-back');
+  await p.waitForSelector('.hidden-list .row:has-text("Chess")');
+  assert((await rankNames()).indexOf('Chess') === -1, 'a hidden topic leaves the rank');
+  await p.waitForSelector('.toast.show', { state: 'hidden' }).catch(() => {});
+  await p.locator('.hidden-list').scrollIntoViewIfNeeded();
+  await p.evaluate(() => scrollBy(0, 200)); await p.waitForTimeout(200);
+  await shot('topics-hidden');
+  await p.click('.hidden-list .row:has-text("Chess") button:has-text("Show")');
+  await p.waitForFunction(() => [...document.querySelectorAll('.rank-list .row .title')].some((t) => t.firstChild.textContent === 'Chess'));
+  assert((await rankNames()).indexOf('Chess') === 4 && (await dbRank())[4].name === 'Chess', 'Show puts it back at the bottom of the rank');
+  await p.evaluate(() => { location.hash = '#/settings/topic/999999'; });
+  await p.waitForSelector('text=That topic no longer exists.');
+  await p.evaluate(() => { location.hash = '#/settings/topics'; });
+  await p.waitForSelector('.rank-list');
+
+  await p.click('text=+ Add topic');
+  await p.fill('.sheet input[type=text]', 'Scratch topic');
+  await p.click('.sheet .btn.primary');
+  await p.click('.rank-list .row:has-text("Scratch topic") .title');
+  await p.waitForSelector('.page-title:text-is("Scratch topic")');
+  p.once('dialog', (d) => d.accept());
+  await p.click('.btn.danger:has-text("Delete topic")');
+  await p.waitForSelector('.rank-list');
+  assert((await sql`select count(*)::int n from topics where name = 'Scratch topic'`)[0].n === 0 && expectW(0.8) && (await rankNames()).length === 5, 'Delete topic removes it, returns to Topics and rebalances');
+
+  console.log('old routes');
+  for (const old of ['sources', 'cards', 'balance', 'decks', 'nonsense']) {
+    await p.evaluate((o) => { location.hash = `#/settings/${o}`; }, old);
+    await p.waitForSelector('.rank-list');
+    assert(p.url().endsWith('#/settings/topics'), `#/settings/${old} lands on Topics`);
+  }
 
   await p.click('a[data-tab=feed]');
   await pickTopics(p, 'Chess');
