@@ -5,7 +5,7 @@
   {
    "name": "Biometrics",
    "color": "#65a30d",
-   "curated_ratio": 1,
+   "kind": "articles",
    "sources": [
     {
      "kind": "rss",
@@ -95,8 +95,7 @@
      "exclude": "",
      "weight": 0.7
     }
-   ],
-   "cards": []
+   ]
   }
  ]
 }

@@ -5,7 +5,7 @@
   {
    "name": "Piano",
    "color": "#0891b2",
-   "curated_ratio": 0.4,
+   "kind": "articles",
    "sources": [
     {
      "kind": "rss",
@@ -73,7 +73,12 @@
      "exclude": "",
      "weight": 1
     }
-   ],
+   ]
+  },
+  {
+   "name": "Piano practice",
+   "color": "#0891b2",
+   "kind": "cards",
    "cards": [
     {
      "kind": "piano_chord",

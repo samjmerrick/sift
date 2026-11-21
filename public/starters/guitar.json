@@ -5,7 +5,7 @@
   {
    "name": "Guitar",
    "color": "#d97706",
-   "curated_ratio": 0.4,
+   "kind": "articles",
    "sources": [
     {
      "kind": "rss",
@@ -73,7 +73,12 @@
      "exclude": "deal, deals, sale, price, giveaway",
      "weight": 0.9
     }
-   ],
+   ]
+  },
+  {
+   "name": "Guitar practice",
+   "color": "#d97706",
+   "kind": "cards",
    "cards": [
     {
      "kind": "guitar_chord",

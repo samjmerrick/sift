@@ -21,6 +21,9 @@ export function validatePack(pack) {
   if (!Array.isArray(pack.topics) || !pack.topics.length) errs.push('pack needs at least one topic');
   for (const t of pack.topics || []) {
     if (!t.name) errs.push('topic needs a name');
+    if (t.kind !== 'articles' && t.kind !== 'cards') errs.push(`${t.name}: kind must be "articles" or "cards"`);
+    if (t.kind === 'articles' && t.cards?.length) errs.push(`${t.name}: an articles topic cannot have cards (put them in a separate "cards" topic)`);
+    if (t.kind === 'cards' && t.sources?.length) errs.push(`${t.name}: a cards topic cannot have sources (put them in a separate "articles" topic)`);
     for (const s of t.sources || []) {
       if (!SOURCE_KINDS[s.kind]) errs.push(`${t.name}: unknown source kind "${s.kind}"`);
       if (!s.name) errs.push(`${t.name}: source needs a name`);
@@ -59,7 +62,7 @@ export async function installPack(data, pack) {
   for (const t of pack.topics) {
     if (existingTopics.has(t.name)) continue;
     const row = await data.insert('topics', {
-      name: t.name, color: t.color || '#64748b', curated_ratio: t.curated_ratio ?? 0.5, position: await data.nextTopicPosition(),
+      name: t.name, color: t.color || '#64748b', kind: t.kind, position: await data.nextTopicPosition(),
     });
     added.topics++;
     for (const s of t.sources || []) {

@@ -387,7 +387,7 @@
   {
    "name": "Machine learning",
    "color": "#c026d3",
-   "curated_ratio": 1,
+   "kind": "articles",
    "sources": [
     {
      "kind": "hn",
@@ -477,13 +477,12 @@
      "exclude": "",
      "weight": 0.7
     }
-   ],
-   "cards": []
+   ]
   },
   {
    "name": "ML concepts",
    "color": "#a21caf",
-   "curated_ratio": 0.4,
+   "kind": "articles",
    "sources": [
     {
      "kind": "rss",
@@ -562,7 +561,12 @@
      "exclude": "",
      "weight": 0.8
     }
-   ],
+   ]
+  },
+  {
+   "name": "ML concepts practice",
+   "color": "#a21caf",
+   "kind": "cards",
    "cards": [
     {
      "kind": "notes",

@@ -5,7 +5,7 @@
   {
    "name": "Cute animals",
    "color": "#ec4899",
-   "curated_ratio": 1,
+   "kind": "articles",
    "sources": [
     {
      "kind": "rss",
@@ -106,8 +106,7 @@
      "exclude": "",
      "weight": 0.7
     }
-   ],
-   "cards": []
+   ]
   }
  ]
 }

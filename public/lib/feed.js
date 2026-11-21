@@ -71,13 +71,16 @@ export function articleCard(r) {
 
 /**
  * Build the next page of the feed.
- * opts: { n, topicIds (filter: array of topic ids; empty = all) or topicId, excludeItems: Set|array, recentKeys: Set|array, recentTopics: number[] }
+ * A topic is either an article topic (only articles) or a card topic (only generated cards).
+ * opts: { n, topicIds (filter: array of topic ids; empty = all) or topicId, type: 'all' | 'articles' | 'cards',
+ *         excludeItems: Set|array, recentKeys: Set|array, recentTopics: number[] }
  */
 export function buildFeed(state, opts = {}) {
   const n = Math.min(Number(opts.n) || 10, 30);
   let topics = state.topics.filter((t) => t.enabled);
   const only = new Set((opts.topicIds ?? (opts.topicId ? [opts.topicId] : [])).map(Number));
   if (only.size) topics = topics.filter((t) => only.has(t.id));
+  if (opts.type === 'articles' || opts.type === 'cards') topics = topics.filter((t) => t.kind === opts.type);
   const excludeItems = new Set(opts.excludeItems || []);
   const excludeKeys = new Set(opts.recentKeys || []);
   const recentTopics = [...(opts.recentTopics || [])];
@@ -98,12 +101,9 @@ export function buildFeed(state, opts = {}) {
     if (pool.length > 1 && a != null && a === b) pool = pool.filter((t) => t.id !== a);
     const topic = weightedPick(pool, (t) => t.weight);
 
-    const articles = curated(topic);
-    const topicGens = gens.filter((g) => g.topic_id === topic.id);
     let card = null;
-    if (articles.length && (!topicGens.length || Math.random() < topic.curated_ratio)) card = articleCard(articles.shift());
-    if (!card) card = generate(state, topicGens, excludeKeys, topic);
-    if (!card && articles.length) card = articleCard(articles.shift());
+    if (topic.kind === 'cards') card = generate(state, gens.filter((g) => g.topic_id === topic.id), excludeKeys, topic);
+    else { const next = curated(topic).shift(); if (next) card = articleCard(next); }
     if (!card) { exhausted.add(topic.id); continue; }
 
     if (card.item_id) excludeItems.add(card.item_id);

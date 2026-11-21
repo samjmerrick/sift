@@ -5,14 +5,42 @@
     {
       "name": "Science",
       "color": "#059669",
-      "weight": 2,
-      "curated_ratio": 0.9,
+      "kind": "articles",
       "sources": [
-        { "kind": "rss", "name": "Quanta Magazine", "config": { "url": "https://www.quantamagazine.org/feed/", "max_age_days": 30 }, "include": "", "exclude": "", "weight": 1.2 },
-        { "kind": "rss", "name": "Ars Technica: science", "config": { "url": "https://feeds.arstechnica.com/arstechnica/science", "max_age_days": 14 }, "include": "", "exclude": "", "weight": 1 },
-        { "kind": "rss", "name": "Nature: news", "config": { "url": "https://www.nature.com/nature.rss", "max_age_days": 14 }, "include": "", "exclude": "", "weight": 0.9 }
-      ],
-      "cards": []
+        {
+          "kind": "rss",
+          "name": "Quanta Magazine",
+          "config": {
+            "url": "https://www.quantamagazine.org/feed/",
+            "max_age_days": 30
+          },
+          "include": "",
+          "exclude": "",
+          "weight": 1.2
+        },
+        {
+          "kind": "rss",
+          "name": "Ars Technica: science",
+          "config": {
+            "url": "https://feeds.arstechnica.com/arstechnica/science",
+            "max_age_days": 14
+          },
+          "include": "",
+          "exclude": "",
+          "weight": 1
+        },
+        {
+          "kind": "rss",
+          "name": "Nature: news",
+          "config": {
+            "url": "https://www.nature.com/nature.rss",
+            "max_age_days": 14
+          },
+          "include": "",
+          "exclude": "",
+          "weight": 0.9
+        }
+      ]
     }
   ]
 }
