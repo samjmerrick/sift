@@ -1179,6 +1179,7 @@ const domainsUi = { q: '', status: 'all' }; // Settings → Domains search and f
 const SETTINGS = {
   /** Topics as a stack rank: order = priority, and the falloff turns rank into each topic's share of the feed. */
   async topics(body) {
+    await rebalance(data); // weights always follow rank + falloff (a no-op once they do)
     const [topics, stats, gens, stored] = await Promise.all([data.topics(), data.sourceStats(), data.generators(), data.setting('falloff', DEFAULT_FALLOFF)]);
     let falloff = Number(stored) || DEFAULT_FALLOFF;
     let savedFalloff = falloff;
