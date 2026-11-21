@@ -33,23 +33,30 @@ Everything is edited in the app under **Settings**, with no code changes or rede
 
 | Tab | What you configure |
 |---|---|
-| Topics | Name, colour, and how often a slot is an article rather than a practice card. |
-| Balance | The share of the feed each topic gets, as percentages that always add up to 100%. Moving one slider moves the others in proportion; lock a topic to hold its share. |
-| Sources | Where articles come from, with include/exclude keywords, a minimum score (Hacker News), a maximum age, and a weight. **Preview** shows what a source would give you before you save it. |
+| Topics | Your topics as a **stack rank**: drag the handle (or use the ↑/↓ buttons) to put them in priority order. The higher a topic sits, the bigger its share of the feed, shown live as a percentage. **Falloff** (Even, Gentle, Smooth, Steep) sets how quickly the share drops down the list. Changes save automatically. Hidden topics are listed below the rank with a Show button. |
 | Domains | Every site your articles link to, with unread, total and 👍/👎 counts. Mute or unmute a domain; muted ones are hidden from the feed but their articles are kept. |
-| Card types | Which practice cards each topic gets, and their settings. Decks live here too: a *Flashcards* or *Notes* card type has a deck picker with **+ New deck** and **Edit deck** (paste lines of `front, back, note`). |
+
+Tap a topic to open its **topic page**:
+
+- **Topic settings**: name, colour and how often a slot is an article rather than a practice card, plus Hide/Show and Delete.
+- **Sources**: where articles come from, with include/exclude keywords, a minimum score (Hacker News), a maximum age, and a weight. **Preview** shows what a source would give you before you save it.
+- **Card types**: which practice cards the topic gets, and their settings. Decks live here too: a *Flashcards* or *Notes* card type has a deck picker with **+ New deck** and **Edit deck** (paste lines of `front, back, note`).
+
+### How the feed is shared out
+
+Each visible topic's weight comes from its place in the rank: the top topic gets 2, and every step down multiplies the weight by the falloff ratio (Even 1, Gentle 0.9, Smooth 0.8, Steep 0.7). So with Smooth and four topics the shares are about 34%, 27%, 22% and 17%. New topics and starter packs join the bottom of the rank. A topic with nothing left to show is skipped, so real shares can drift a little.
 
 ### Choosing what you see
 
 The feed has a **topic filter** (the button at the top right): search, tick any combination of topics, then apply. Your choice is remembered on that device.
 
-While reading, tap **⋯** on an article (or its source name) to change what you see for good: hide the source, hide the site's domain (useful for Hacker News), show less or more from the source, hide the topic, or edit the source. Practice cards have it too: hide or rebalance a card type, hide its topic, or edit it. Each hide offers Undo. Muted domains are listed under Settings → Domains.
+While reading, tap **⋯** on an article (or its source name) to change what you see for good: hide the source, hide the site's domain (useful for Hacker News), show less or more from the source, hide the topic, or edit the source. Practice cards have it too: hide or rebalance a card type, hide its topic, or edit it (the editor opens on that topic's page). Each hide offers Undo. Muted domains are listed under Settings → Domains.
 
 Tapping an article's title opens it **in Sift**, in the app's own colours and fonts (dark mode included), with adjustable text size. YouTube videos play in place. If a page can't be read (paywalls, JavaScript-only sites), you get a button to open the original. Long-press a title to open the original directly.
 
 ### Managing lots of sources
 
-Settings → Sources, Topics and Cards each have a search box, filters (topic, type, and status such as off, erroring or never fetched) and collapsible groups. Tap **Select** to tick many rows and act on them at once: turn on or off, move sources to another topic, set weight, fetch now, or delete.
+Each topic page has a **Sources** list and a **Card types** list, each with a search box, filters (type, and status such as off, erroring or never fetched) and a **Select** mode: tick many rows and act on them at once. Sources can be turned on or off, moved to another topic, given a weight, fetched now, or deleted; card types can be turned on or off, or deleted. On the Topics screen a ⚠ next to a topic means one of its sources failed its last fetch, and **Fetch all now** at the bottom refreshes every source.
 
 ### Reading in the app and muting domains
 
@@ -78,7 +85,7 @@ A pack is one JSON file in `public/starters/`. Add its filename to `public/start
     { "name": "Openings", "cards": [["e4 e5 Nf3 Nc6 Bc4", "Italian Game", "optional note"]] }
   ],
   "topics": [{
-    "name": "Chess", "color": "#7c3aed", "weight": 2, "curated_ratio": 0.5,
+    "name": "Chess", "color": "#7c3aed", "curated_ratio": 0.5,
     "sources": [
       { "kind": "rss", "name": "Some blog", "config": { "url": "https://example.com/feed", "max_age_days": 30 },
         "include": "", "exclude": "", "weight": 1 },
@@ -95,7 +102,7 @@ A pack is one JSON file in `public/starters/`. Add its filename to `public/start
 
 Source kinds are `rss` and `hn`. Card kinds and their `config` keys are defined in `public/lib/generators.js` (`flashcards`, `notes`, `prompts`, `guitar_chord`, `guitar_scale`, `fretboard_note`, `piano_chord`, `key_signature`, `ear_interval`, `staff_notes`). `npm test` validates every pack and installs each one into a real schema, so mistakes show up before you deploy.
 
-A pack only adds topics and decks whose names don't exist yet, so installing one twice is harmless.
+A pack only adds topics and decks whose names don't exist yet, so installing one twice is harmless. New topics join the bottom of your rank.
 
 ## How it's hosted (all free tiers)
 
@@ -180,7 +187,7 @@ Pull from the upstream repository into your fork, then apply new migrations (`su
 
 - **Blank page, or "Can't start"**: the app shows what's wrong. Usually the `SUPABASE_URL` / `SUPABASE_ANON_KEY` variables are missing or wrong (the deploy fails with a message if they're unset). Fix them and re-run the workflow. **Clear cache and reload** helps if the phone is stuck on an old version.
 - **Sign-in works but everything is empty or errors**: step 3's `insert into app_owner …` wasn't run, or used a different email.
-- **A source shows an error**: open it in Settings → Sources and press **Preview**. The message says whether the feed URL, a redirect or your filters are the problem.
+- **A source shows an error**: open it from its topic page (Settings → Topics, then the topic) and press **Preview**. The message says whether the feed URL, a redirect or your filters are the problem.
 - **No new articles overnight**: check that `select private.schedule_fetch(…)` was run, and look at **Database → Cron** (or `select * from cron.job_run_details order by start_time desc limit 5;`).
 
 ## Development
@@ -208,7 +215,8 @@ public/                       the app (vanilla JS, no build step)
   lib/feed.js                 ranking + building feed pages
   lib/generators.js           practice card kinds + spaced repetition
   lib/packs.js                validating and installing starter packs
-  lib/balance.js              share-balancing maths for Settings → Balance
+  lib/balance.js              rank → weight maths (falloff presets) for Settings → Topics
+  lib/rank.js                 saving the rank: positions and weights from the stored order + falloff
   lib/theory.js               music theory (spelling, chords, scales, keys, chord shapes)
   lib/data.js                 all Supabase reads/writes
 supabase/migrations/          schema, owner-only row level security, feed_state(), hourly cron support
