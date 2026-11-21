@@ -36,6 +36,23 @@ export function createData(client) {
       }).eq('id', id));
     },
 
+    // ---- hiding things ----
+    async mutedDomains() { return check(await client.from('muted_domains').select('*').order('domain')); },
+    async muteDomain(domain) {
+      const { error } = await client.from('muted_domains').insert({ domain: String(domain).trim().toLowerCase() });
+      if (error && error.code !== '23505') throw new Error(error.message || String(error)); // already muted is fine
+    },
+    async unmuteDomain(domain) { check(await client.from('muted_domains').delete().eq('domain', String(domain).trim().toLowerCase())); },
+
+    // ---- reader ----
+    /** One item plus its source name (for the reader when it isn't in the feed, e.g. after a reload or from Saved). */
+    async item(id) {
+      const [row] = check(await client.from('items').select('*').eq('id', id));
+      if (!row) return null;
+      const [src] = check(await client.from('sources').select('name').eq('id', row.source_id));
+      return { ...row, source_name: src?.name || '', published_at: ms(row.published_at), saved_at: ms(row.saved_at) };
+    },
+
     // ---- saved ----
     async saved() {
       const [items, cards] = await Promise.all([

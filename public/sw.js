@@ -1,7 +1,7 @@
 // App-shell cache so Sift opens instantly (and offline). Data requests always go to the network.
-const CACHE = 'sift-v7';
+const CACHE = 'sift-v8';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'config.js', 'manifest.webmanifest', 'icon.svg', 'vendor/supabase-js-2.118.0.js',
-  'lib/balance.js', 'lib/csv.js', 'lib/data.js', 'lib/feed.js', 'lib/generators.js', 'lib/packs.js', 'lib/source-kinds.js', 'lib/theory.js'];
+  'lib/balance.js', 'lib/csv.js', 'lib/data.js', 'lib/feed.js', 'lib/generators.js', 'lib/packs.js', 'lib/sanitise.js', 'lib/source-kinds.js', 'lib/theory.js'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).catch(() => {}).then(() => self.skipWaiting()));
