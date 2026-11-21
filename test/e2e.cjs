@@ -11,6 +11,17 @@ const BASE = process.env.BASE_URL || 'http://localhost:5173';
 const OUT = process.argv[2];
 const sql = postgres(process.env.DATABASE_URL || 'postgres://postgres:postgres@localhost:5432/sift_dev', { onnotice: () => {} });
 const assert = (cond, msg) => { if (!cond) throw new Error(`FAILED: ${msg}`); console.log(`  ✓ ${msg}`); };
+// Filter the feed through the topic picker: one category group, or everything when `group` is null.
+const pickTopics = async (p, group) => {
+  await p.click('#topics-btn');
+  await p.waitForSelector('.pick-quick');
+  if (group) {
+    await p.click('.pick-quick .chip:has-text("Clear")');
+    await p.click(`.pick-group:has-text("${group}") button.link`);
+  } else await p.click('.pick-quick .chip:has-text("Select all")');
+  await p.click('.pick-foot .btn.primary');
+  await p.waitForSelector('#sheet', { state: 'hidden' });
+};
 
 (async () => {
   // A local feed for "add source" / "preview" / "fetch now".
@@ -39,7 +50,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(`FAILED: ${msg}`); co
   const p = await ctx.newPage();
   const errors = [];
   p.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-  p.on('console', (m) => m.type() === 'error' && !/favicon/.test(m.text()) && errors.push(`console: ${m.text()}`));
+  p.on('console', (m) => m.type() === 'error' && !/favicon|net::ERR_/.test(m.text()) && errors.push(`console: ${m.text()}`));
   const shot = (name) => OUT && p.screenshot({ path: path.join(OUT, `e2e-${name}.png`) });
 
   console.log('auth');
@@ -80,7 +91,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(`FAILED: ${msg}`); co
   assert(count >= 40, `infinite scroll keeps loading (${count} cards)`);
   assert(kinds.has('article') && kinds.has('flashcard') && kinds.size >= 6, `mixes card kinds: ${[...kinds].join(', ')}`);
 
-  await p.click('.chip:has-text("Languages")');
+  await pickTopics(p, 'Languages');
   await p.waitForSelector('.k-flashcard .reveal');
   await p.click('.k-flashcard .reveal');
   await p.click('.k-flashcard .grade .good');
@@ -88,7 +99,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(`FAILED: ${msg}`); co
   const [studied] = await sql`select count(*)::int n from cards where due is not null and introduced_at is not null`;
   assert(studied.n === 1, 'grading a flashcard schedules it in the database');
 
-  await p.click('.chip:has-text("All")');
+  await pickTopics(p, null);
   await p.waitForSelector('.k-article');
   const itemId = await p.$eval('.k-article', (el) => Number(el.dataset.item));
   await p.click(`.k-article[data-item="${itemId}"] .act.up`);
@@ -109,6 +120,28 @@ const assert = (cond, msg) => { if (!cond) throw new Error(`FAILED: ${msg}`); co
   await p.waitForSelector('.saved-list .card');
   const savedCount = await p.$$eval('.saved-list .card', (c) => c.length);
   assert(savedCount === 2, `saved view shows the saved article and practice card (${savedCount})`);
+
+  console.log('hide + reader');
+  await p.click('a[data-tab=feed]');
+  await p.waitForSelector('.k-article');
+  const hideId = await p.$eval('.k-article[data-source]', (el) => el.dataset.source);
+  await p.click(`.k-article[data-source="${hideId}"] .act.more`);
+  await p.click('#sheet .row:has-text("Hide source")');
+  await p.waitForSelector('.toast.show:has-text("Hidden")');
+  assert((await p.$$(`.k-article[data-source="${hideId}"]`)).length === 0, 'hiding a source clears its cards at once');
+  await p.click('.toast button:has-text("Undo")');
+  await p.waitForTimeout(400);
+  assert((await sql`select enabled from sources where id = ${hideId}`)[0].enabled, 'undo re-enables the source');
+  await sql`update items set seen_at = null where url like 'https://sample.test/%'`;
+  await p.click('#refresh');
+  await p.waitForSelector('.k-article');
+  const sample = await sql`select id from items where url = 'https://sample.test/0'`;
+  await p.evaluate((i) => { location.hash = `#/read/${i}`; }, sample[0].id);
+  await p.waitForSelector('.reader-fail, .reader-body, .reader-skel');
+  assert(await p.isHidden('.tabbar'), 'reader view opens (tab bar hidden)');
+  await shot('reader');
+  await p.click('.reader-back');
+  await p.waitForSelector('.feed .card');
 
   console.log('settings');
   await p.click('a[data-tab=settings]');
@@ -145,14 +178,39 @@ const assert = (cond, msg) => { if (!cond) throw new Error(`FAILED: ${msg}`); co
   assert(titles.indexOf('Chess') === 4, 'new topic is added at the end');
 
   await p.click('.seg button:has-text("Cards")');
-  await p.waitForSelector('.section-h:has-text("Chess")');
-  await p.click('.section-h:has-text("Chess") + .list >> text=+ Add card type');
+  await p.waitForSelector('.grp-name:text-is("Chess")');
+  await p.click('.grp:has(.grp-name:text-is("Chess")) >> text=+ Add card type');
   await p.selectOption('.sheet select >> nth=0', 'prompts');
   await p.fill('.sheet textarea', 'Learn the Italian opening\nDo 5 tactics puzzles');
   await p.click('.sheet .btn.primary');
   await p.waitForTimeout(500);
   const [gen] = await sql`select g.* from generators g join topics t on t.id = g.topic_id where t.name = 'Chess'`;
   assert(gen?.config?.lines?.includes('Italian'), 'card type created with its config');
+
+  console.log('bulk management');
+  await p.click('.seg button:has-text("Sources")');
+  await p.waitForSelector('.intro:has-text("Where articles")');
+  await p.waitForSelector('.bulk-toolbar');
+  await p.fill('.bulk-search', 'hacker');
+  const hackerIds = (await sql`select id from sources where name ilike '%hacker%'`).map((r) => r.id);
+  await p.waitForFunction((n) => document.querySelector('.bulk-count')?.textContent.startsWith(n + ' of'), hackerIds.length);
+  assert(true, 'search narrows the source list');
+  await p.click('.bulk-select');
+  await p.click('text=Select all shown');
+  assert((await p.textContent('.bulk-bar-n')).startsWith(`${hackerIds.length} selected`), 'select all shown selects the matches');
+  await shot('bulk-select');
+  await p.click('.bulk-actions >> text=Turn off');
+  await p.waitForSelector('.toast.show:has-text("Turned off")');
+  await p.waitForTimeout(400);
+  const [offN] = await sql`select count(*)::int n from sources where id = any(${hackerIds}) and not enabled`;
+  assert(offN.n === hackerIds.length, 'bulk turn off updates every selected source');
+  assert((await p.inputValue('.bulk-search')) === 'hacker' && !(await p.$('.bulk-bar:not([hidden])')), 'search is kept and selection mode ends after a bulk action');
+  await p.click('.bulk-select');
+  await p.click('text=Select all shown');
+  await p.click('.bulk-actions >> text=Turn on');
+  await p.waitForTimeout(600);
+  const [offAfter] = await sql`select count(*)::int n from sources where id = any(${hackerIds}) and not enabled`;
+  assert(offAfter.n === 0, 'bulk turn on restores them');
 
   await p.click('.seg button:has-text("Decks")');
   await p.waitForSelector('text=+ New deck');
@@ -166,7 +224,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(`FAILED: ${msg}`); co
   await shot('decks');
 
   await p.click('a[data-tab=feed]');
-  await p.click('.chip:has-text("Other")');
+  await pickTopics(p, 'Other');
   await p.waitForSelector('.k-prompt');
   assert(true, 'new topic and card type appear in the feed');
 

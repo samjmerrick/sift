@@ -42,6 +42,19 @@ Everything is edited in the app under **Settings**, with no code changes or rede
 
 The feed has a **topic filter** (the button at the top right): search, tick any combination of topics, then apply. Your choice is remembered on that device.
 
+While reading, tap **⋯** on an article (or its source name) to change what you see for good: hide the source, hide the site's domain (useful for Hacker News), show less or more from the source, hide the topic, or edit the source. Each hide offers Undo. Muted domains are listed under Settings, next to Sign out.
+
+Tapping an article's title opens it **in Sift**, in the app's own colours and fonts (dark mode included), with adjustable text size. YouTube videos play in place. If a page can't be read (paywalls, JavaScript-only sites), you get a button to open the original. Long-press a title to open the original directly.
+
+### Managing lots of sources
+
+Settings → Sources, Topics and Cards each have a search box, filters (topic, type, and status such as off, erroring or never fetched) and collapsible groups. Tap **Select** to tick many rows and act on them at once: turn on or off, move sources to another topic, set weight, fetch now, set a topic's category, or delete.
+
+### Reading in the app and muting domains
+
+- **In-app reader**: opening an article extracts its readable text through the Edge Function (Mozilla Readability), strips it down to a strict allowlist of safe HTML and caches it in `item_content`, so it's fetched once. Feeds that publish full text (`content:encoded` or Atom `<content>`, 1,500+ characters) are stored at fetch time with no extra request. Pages that can't be extracted are recorded as failed and retried after 24 hours.
+- **Muted domains**: a domain in `muted_domains` never appears in the feed (`feed_state` filters it out). Existing items are kept, just hidden.
+
 ### Tips for good sources
 
 - **YouTube channel**: RSS source with `https://www.youtube.com/feeds/videos.xml?channel_id=CHANNEL_ID`. To find the ID, open the channel page and use *Share channel → Copy channel ID* (it starts with `UC`). Shorts are skipped automatically.

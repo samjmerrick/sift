@@ -13,10 +13,13 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@mozilla/readability": "0.6.0",
     "fast-xml-parser": "5.11.2",
+    "linkedom": "0.18.15",
     "postgres": "3.4.9"
   },
   "devDependencies": {
-    "@supabase/supabase-js": "2.118.0"
+    "@supabase/supabase-js": "2.118.0",
+    "linkedom": "0.18.15"
   }
 }

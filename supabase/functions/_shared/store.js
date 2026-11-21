@@ -1,5 +1,6 @@
 // Persists fetched articles to Postgres. Used by the hourly GitHub Action (Node) and the Edge Function (Deno).
 // `sql` is a client from the `postgres` package.
+import { sanitiseHtml } from './reader.js';
 import { previewSource, normaliseUrl, titleKey, domainOf, get, decodeEntities, htmlToText, truncate } from './fetcher.js';
 
 const DAY = 86400000;
@@ -25,8 +26,15 @@ export async function fetchSource(sql, src) {
         values (${src.id}, ${src.topic_id}, ${url}, ${i.title.trim()}, ${key}, ${i.summary || ''}, ${i.image || null},
                 ${domainOf(url)}, ${i.comments_url || null}, ${i.community_score ?? null}, ${i.comment_count ?? null},
                 ${published}, ${now})
-        on conflict (url) do nothing`;
+        on conflict (url) do nothing
+        returning id`;
       added += r.count;
+      if (r.length && i.content_html) {
+        const clean = sanitiseHtml(i.content_html, url);
+        await sql`insert into item_content (item_id, status, title, html, text_length, lead_image)
+          values (${r[0].id}, 'ok', ${i.title.trim()}, ${clean}, ${htmlToText(clean).length}, ${i.image || null})
+          on conflict (item_id) do nothing`;
+      }
     }
     await sql`update sources set last_fetched = ${now}, last_error = null where id = ${src.id}`;
     return { added };

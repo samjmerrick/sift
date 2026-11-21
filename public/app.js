@@ -6,6 +6,7 @@ import { SOURCE_KINDS } from './lib/source-kinds.js';
 import { installPack } from './lib/packs.js';
 import { STAFF, keySigSteps } from './lib/theory.js';
 import { sharesFromWeights, setShare, setGroupShare, toPercents, weightFromPercent } from './lib/balance.js';
+import { sanitiseHtml } from './lib/sanitise.js';
 
 // ---------- utilities ----------
 const $ = (sel, el = document) => el.querySelector(sel);
@@ -49,12 +50,17 @@ function ago(ms) {
 const compact = (n) => (n >= 1000 ? `${(n / 1000).toFixed(n >= 10000 ? 0 : 1)}k` : String(n));
 
 let toastTimer;
-function toast(msg) {
+/** Brief message at the bottom. With `action: { label, onClick }` it stays ~5 s and shows a button (e.g. Undo). */
+function toast(msg, action) {
   const t = $('#toast');
-  t.textContent = msg;
+  t.replaceChildren(msg);
+  if (action) {
+    t.append(h('button', { type: 'button', onclick: () => { t.classList.remove('show', 'has-action'); clearTimeout(toastTimer); action.onClick(); } }, action.label));
+  }
+  t.classList.toggle('has-action', !!action);
   t.classList.add('show');
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+  toastTimer = setTimeout(() => t.classList.remove('show', 'has-action'), action ? 5000 : 2200);
 }
 
 const config = window.SIFT_CONFIG || {};
@@ -81,6 +87,8 @@ const ICON = {
   play: '<svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>',
   ext: '<svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v6H4V6h6"/></svg>',
   lock: '<svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>',
+  more: '<svg viewBox="0 0 24 24"><circle cx="5.5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18.5" cy="12" r="1.2"/></svg>',
+  back: '<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
 };
 const icon = (name) => h('span', { html: ICON[name], style: { display: 'contents' } });
 
@@ -225,6 +233,7 @@ function flushSeen() {
 }
 
 // ---------- feed ----------
+const articleData = new Map(); // item_id -> article card data, for the reader and the ⋯ sheet
 const feed = { state: null, list: null, sentinel: null, loading: false, done: false, itemIds: [], recentKeys: [], recentTopics: [], dirty: false, scrollY: 0, el: null };
 
 function resetFeed() {
@@ -323,6 +332,7 @@ function reactionButtons(c, { onReact, onSave, initialReaction = 0, initialSaved
 function renderCard(c, { savedId } = {}) {
   const t = topicById(c.topic_id);
   const card = h('article', { class: `card k-${c.kind}`, style: { '--c': t.color } });
+  if (c.topic_id != null) card.dataset.topic = c.topic_id;
   if (c.kind === 'article') return renderArticle(c, card);
 
   const body = (GEN_RENDER[c.kind] || ((x) => [h('p', {}, JSON.stringify(x))]))(c);
@@ -352,20 +362,31 @@ function renderArticle(c, card) {
   const img = safeUrl(c.image) ? h('img', { class: 'thumb', src: c.image, alt: '', loading: 'lazy', referrerpolicy: 'no-referrer', onerror: (e) => e.target.remove() }) : null;
   const btns = reactionButtons(c, {
     initialReaction: c.reaction, initialSaved: c.saved,
-    onReact: (r) => data.reactItem(c.item_id, r),
-    onSave: (s) => data.saveItem(c.item_id, s),
+    onReact: async (r) => { await data.reactItem(c.item_id, r); c.reaction = r; },
+    onSave: async (s) => { await data.saveItem(c.item_id, s); c.saved = s; },
   });
+  articleData.set(c.item_id, c);
   card.dataset.item = c.item_id;
+  if (c.source_id != null) card.dataset.source = c.source_id;
+  if (c.domain) card.dataset.domain = c.domain;
+  // A plain left click opens the in-app reader; the href still points at the original so long-press,
+  // middle-click and "open in new tab" keep working.
+  const openReader = (e) => {
+    if (e.button !== 0 || e.ctrlKey || e.metaKey || e.shiftKey || e.altKey) return;
+    e.preventDefault();
+    location.hash = `#/read/${c.item_id}`;
+  };
   card.append(
-    metaRow(c, [c.source, c.published_at && ago(c.published_at)]),
+    metaRow(c, [sourceButton(c), c.published_at && ago(c.published_at)]),
     h('div', { class: 'article-body' },
-      h('div', {}, h('h3', {}, h('a', { href: url, target: '_blank', rel: 'noopener noreferrer' }, c.title)), summary),
+      h('div', {}, h('h3', {}, h('a', { href: url, target: '_blank', rel: 'noopener noreferrer', onclick: openReader }, c.title)), summary),
       img),
     h('div', { class: 'actions' },
       c.score != null ? h('span', { class: 'act', title: 'Community score' }, icon('score'), compact(c.score)) : null,
       comments && comments !== url ? h('a', { class: 'act', href: comments, target: '_blank', rel: 'noopener noreferrer', title: 'Discussion' }, icon('comments'), c.comments != null ? compact(c.comments) : '') : null,
       h('span', { class: 'act', style: { cursor: 'default', paddingLeft: '4px' } }, c.domain || ''),
-      h('span', { class: 'spacer' }), ...btns),
+      h('span', { class: 'spacer' }), ...btns,
+      c.source_id != null ? h('button', { class: 'act more', 'aria-label': `More options for ${c.source}`, onclick: () => openSourceSheet(c) }, icon('more')) : null),
   );
   seenObserver.observe(card);
   return card;
@@ -611,13 +632,306 @@ function tone(midi, t, dur) {
   });
 }
 
+// ---------- changing what the feed shows (⋯ sheet) ----------
+const sourceButton = (c, opts) => (c.source ? h('button', { class: 'src-btn', type: 'button', title: 'Options for this source', onclick: () => openSourceSheet(c, opts) }, c.source) : null);
+const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
+
+/** Remove rendered feed cards whose data-* attributes match, so hidden things vanish immediately. */
+function removeFeedCards(match) {
+  if (!feed.el) return;
+  for (const el of feed.el.querySelectorAll('.card')) {
+    if (!match(el.dataset)) continue;
+    seenObserver.unobserve(el);
+    clearTimeout(el._seenTimer);
+    el.remove();
+  }
+  if (feed.done && feed.list && !feed.list.children.length) feed.status.textContent = "You're all caught up.";
+}
+
+/**
+ * Persist a "hide" choice, drop what it covers from the feed (DOM and in-memory state), and offer Undo.
+ * dropItem(item) / dropCard(dataset) say what is covered; local()/unlocal() adjust other in-memory state.
+ */
+async function hideFromFeed({ name, persist, undo, dropItem, dropCard, local, unlocal, done }) {
+  try { await persist(); } catch (e) { return fail(e); }
+  const state = feed.state;
+  const removed = state ? state.items.filter(dropItem) : [];
+  if (state) state.items = state.items.filter((i) => !dropItem(i));
+  local?.();
+  removeFeedCards(dropCard);
+  done?.();
+  toast(`Hidden ${name}`, {
+    label: 'Undo',
+    onClick: async () => {
+      try { await undo(); } catch (e) { return fail(e); }
+      unlocal?.();
+      if (state && feed.state === state) {
+        state.items.push(...removed);
+        const gone = new Set(removed.map((i) => i.id));
+        feed.itemIds = feed.itemIds.filter((x) => !gone.has(x)); // let them be picked again further down
+      }
+      feed.dirty = true;
+      toast(`Restored ${name}`);
+    },
+  });
+}
+
+const hideSource = (c, done) => hideFromFeed({
+  name: c.source,
+  persist: () => data.update('sources', c.source_id, { enabled: false }),
+  undo: () => data.update('sources', c.source_id, { enabled: true }),
+  dropItem: (i) => i.source_id === c.source_id,
+  dropCard: (d) => d.source === String(c.source_id),
+  local: () => { const s = feed.state?.sources.find((x) => x.id === c.source_id); if (s) s.enabled = false; },
+  unlocal: () => { const s = feed.state?.sources.find((x) => x.id === c.source_id); if (s) s.enabled = true; },
+  done,
+});
+
+const hideDomain = (c, done) => hideFromFeed({
+  name: c.domain,
+  persist: () => data.muteDomain(c.domain),
+  undo: () => data.unmuteDomain(c.domain),
+  dropItem: (i) => i.domain === c.domain,
+  dropCard: (d) => d.domain === c.domain,
+  done,
+});
+
+const hideTopic = (c, done) => {
+  const t = topicById(c.topic_id);
+  const setEnabled = (v) => {
+    for (const list of [meta.topics, feed.state?.topics || []]) { const x = list.find((y) => y.id === c.topic_id); if (x) x.enabled = v; }
+    renderChips();
+  };
+  return hideFromFeed({
+    name: t.name,
+    persist: () => data.update('topics', c.topic_id, { enabled: false }),
+    undo: () => data.update('topics', c.topic_id, { enabled: true }),
+    dropItem: (i) => i.topic_id === c.topic_id,
+    dropCard: (d) => d.topic === String(c.topic_id),
+    local: () => {
+      const filtered = filter.has(c.topic_id);
+      setEnabled(false); // renderChips drops it from the filter
+      if (filtered) { store.set('filter', [...filter]); feed.dirty = true; if (route().name === 'feed') resetFeed(); }
+    },
+    unlocal: () => setEnabled(true),
+    done,
+  });
+};
+
+async function nudgeSource(c, factor) {
+  try {
+    const src = (await data.sourceStats()).find((s) => s.id === c.source_id);
+    if (!src) throw new Error('That source no longer exists.');
+    const next = clamp(+(src.weight * factor).toFixed(2), 0.1, 10);
+    if (next === src.weight) return toast(factor < 1 ? 'Already at the lowest weight' : 'Already at the highest weight');
+    const apply = async (w) => {
+      await data.update('sources', c.source_id, { weight: w });
+      const s = feed.state?.sources.find((x) => x.id === c.source_id);
+      if (s) s.weight = w;
+    };
+    await apply(next);
+    toast(`${factor < 1 ? 'Less' : 'More'} from ${c.source}`, { label: 'Undo', onClick: () => apply(src.weight).catch(fail) });
+  } catch (e) { fail(e); }
+}
+
+async function editSourceFor(c) {
+  try {
+    const src = (await data.sourceStats()).find((s) => s.id === c.source_id);
+    if (!src) throw new Error('That source no longer exists.');
+    const target = '#/settings/sources';
+    if (location.hash !== target) {
+      const routed = new Promise((resolve) => window.addEventListener('hashchange', resolve, { once: true }));
+      location.hash = target;
+      await routed; // onRoute (registered first) has run and closed any sheet by now
+    }
+    await loadMeta().catch(() => {});
+    editSource(src);
+  } catch (e) { fail(e); }
+}
+
+/** The ⋯ sheet: hide, rebalance or edit what a card came from. */
+function openSourceSheet(c, { reader = false } = {}) {
+  const topic = topicById(c.topic_id);
+  const done = () => { if (reader) leaveReader(); };
+  const act = (fn) => () => { closeSheet(); fn(); };
+  const row = (title, desc, onclick) => h('button', { class: 'row row-btn', type: 'button', onclick },
+    h('div', { class: 'grow' }, h('div', { class: 'title' }, title), h('div', { class: 'desc' }, desc)));
+  openSheet(c.source || 'This card', h('div', { class: 'list' }, [
+    row(`Hide source “${c.source}”`, 'Stop showing articles from it. You can undo this.', act(() => hideSource(c, done))),
+    c.domain ? row(`Hide ${c.domain}`, 'Never show links to this site, whichever source they come from.', act(() => hideDomain(c, done))) : null,
+    row('Show less from this source', 'Lowers its weight, so it ranks lower.', act(() => nudgeSource(c, 0.6))),
+    row('Show more from this source', 'Raises its weight, so it ranks higher.', act(() => nudgeSource(c, 1.5))),
+    topic.name ? row(`Hide topic “${topic.name}”`, 'Hides the whole topic, including its practice cards.', act(() => hideTopic(c, done))) : null,
+    row('Edit source…', 'Name, keywords, weight and more, in Settings.', act(() => editSourceFor(c))),
+  ]));
+}
+
+async function openMutedSheet() {
+  const box = h('div', {}, h('p', { class: 'sub' }, 'Loading…'));
+  openSheet('Muted domains', box);
+  const count = (n) => { const b = $('#muted-btn'); if (b) b.textContent = `Muted domains (${n})`; };
+  const draw = (list) => {
+    count(list.length);
+    box.replaceChildren(list.length
+      ? h('div', { class: 'list' }, list.map((d) => h('div', { class: 'row row-static' },
+        h('div', { class: 'grow' }, h('div', { class: 'title' }, d.domain)),
+        h('button', {
+          class: 'btn', 'aria-label': `Unmute ${d.domain}`,
+          onclick: async () => { try { await data.unmuteDomain(d.domain); feed.dirty = true; draw(list.filter((x) => x !== d)); } catch (e) { fail(e); } },
+        }, 'Unmute'))))
+      : h('div', { class: 'empty' }, h('h3', {}, 'Nothing muted'), h('p', {}, 'Use ⋯ on an article to stop seeing links to a site.')));
+  };
+  try { draw(await data.mutedDomains()); } catch (e) { box.replaceChildren(h('p', { class: 'status' }, e.message)); }
+}
+
+// ---------- reader ----------
+const READER_SIZES = [17, 19, 21, 24]; // px; index 1 is the default
+const readCache = new Map(); // item_id -> successful `read` result, for this session
+let readerToken = 0;
+
+function leaveReader() {
+  if (routeCount > 1) history.back(); else location.hash = '#/';
+}
+
+function youtubeId(url) {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^(www|m)\./, '');
+    let id = null;
+    if (host === 'youtu.be') id = u.pathname.slice(1).split('/')[0];
+    else if (host === 'youtube.com') id = u.pathname === '/watch' ? u.searchParams.get('v') : /^\/(shorts|embed|live)\//.test(u.pathname) ? u.pathname.split('/')[2] : null;
+    return /^[\w-]{11}$/.test(id || '') ? id : null;
+  } catch { return null; }
+}
+
+const rowToCard = (r) => ({
+  key: `item:${r.id}`, kind: 'article', item_id: r.id, topic_id: r.topic_id, source_id: r.source_id, title: r.title, summary: (r.summary || '').trim(),
+  url: r.url, domain: r.domain, image: r.image, source: r.source_name, comments_url: r.comments_url, score: r.community_score, comments: r.comment_count,
+  published_at: r.published_at, reaction: r.reaction, saved: !!r.saved_at,
+});
+
+/** Keep the (hidden) feed card's buttons in step with a reaction made in the reader. */
+function syncFeedCard(c) {
+  const el = feed.el?.querySelector(`.card[data-item="${c.item_id}"]`);
+  if (!el) return;
+  $('.act.up', el)?.setAttribute('aria-pressed', String(c.reaction === 1));
+  $('.act.down', el)?.setAttribute('aria-pressed', String(c.reaction === -1));
+  $('.act.save', el)?.setAttribute('aria-pressed', String(!!c.saved));
+}
+
+const openOriginal = (c, { primary = false, label = 'Open original' } = {}) => (safeUrl(c.url)
+  ? h('a', { class: `btn${primary ? ' primary' : ''}`, href: c.url, target: '_blank', rel: 'noopener noreferrer' }, icon('ext'), label) : null);
+
+const readerSkeleton = () => h('div', { class: 'reader-skel', 'aria-label': 'Loading article', role: 'status' },
+  [92, 100, 97, 64, 0, 100, 95, 99, 78, 0, 98, 100, 52].map((w) => (w ? h('div', { class: 'skel-line', style: { width: `${w}%` } }) : h('div', { class: 'skel-gap' }))));
+
+function readerBar(c, page) {
+  let step = clamp(Number(store.get('readerSize', 1)) || 0, 0, READER_SIZES.length - 1);
+  const dec = h('button', { class: 'icon-btn size-btn', 'aria-label': 'Smaller text', onclick: () => { step--; apply(); } }, h('span', { class: 'size-a small' }, 'A−'));
+  const inc = h('button', { class: 'icon-btn size-btn', 'aria-label': 'Larger text', onclick: () => { step++; apply(); } }, h('span', { class: 'size-a' }, 'A+'));
+  const apply = () => {
+    page.style.setProperty('--reader-fs', `${READER_SIZES[step]}px`);
+    dec.disabled = step === 0;
+    inc.disabled = step === READER_SIZES.length - 1;
+    store.set('readerSize', step);
+  };
+  apply();
+  const ext = c && safeUrl(c.url) ? h('a', { class: 'icon-btn', href: c.url, target: '_blank', rel: 'noopener noreferrer', 'aria-label': 'Open original in a new tab', title: 'Open original' }, icon('ext')) : null;
+  const more = c && c.source_id != null ? h('button', { class: 'icon-btn', 'aria-label': `More options for ${c.source}`, title: 'More options', onclick: () => openSourceSheet(c, { reader: true }) }, icon('more')) : null;
+  return h('div', { class: 'reader-bar' },
+    h('button', { class: 'reader-back', onclick: leaveReader, 'aria-label': 'Back to the feed' }, icon('back'), h('span', {}, 'Back')),
+    h('span', { class: 'spacer' }), dec, inc, ext, more);
+}
+
+async function renderReader(id) {
+  const token = ++readerToken;
+  const alive = () => token === readerToken && route().name === 'read';
+  const page = h('div', { class: 'reader' });
+  view.replaceChildren(page);
+  scrollTo(0, 0);
+  let c = articleData.get(id);
+  if (!c) {
+    page.replaceChildren(readerBar(null, page), h('div', { class: 'reader-article' }, readerSkeleton()));
+    try {
+      const row = await data.item(id);
+      if (!alive()) return;
+      if (!row) throw new Error("That article doesn't exist any more.");
+      c = rowToCard(row);
+      articleData.set(id, c);
+    } catch (e) {
+      if (alive()) page.replaceChildren(readerBar(null, page), h('div', { class: 'empty' }, h('h3', {}, "Couldn't open this article"), h('p', {}, e.message)));
+      return;
+    }
+  }
+  seenQueue.add(id);
+
+  const t = topicById(c.topic_id);
+  const when = c.published_at ? new Date(c.published_at).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' }) : '';
+  const bylineEl = h('p', { class: 'reader-byline' }, when);
+  const body = h('div', { class: 'reader-body' });
+  const title = h('h1', { class: 'reader-title', tabindex: '-1' }, c.title);
+  const btns = reactionButtons(c, {
+    initialReaction: c.reaction, initialSaved: c.saved,
+    onReact: async (r) => { await data.reactItem(id, r); c.reaction = r; syncFeedCard(c); },
+    onSave: async (s) => { await data.saveItem(id, s); c.saved = s; syncFeedCard(c); },
+  });
+  page.replaceChildren(
+    readerBar(c, page),
+    h('article', { class: 'reader-article', style: { '--c': t.color } },
+      metaRow(c, [sourceButton(c, { reader: true })]), title, bylineEl, body),
+    h('div', { class: 'reader-foot' },
+      h('div', { class: 'actions' }, ...btns, h('span', { class: 'spacer' }), openOriginal(c))));
+  title.focus({ preventScroll: true });
+
+  const summary = () => (c.summary ? h('p', { class: 'reader-summary' }, c.summary) : null);
+  const setByline = (parts) => { bylineEl.textContent = [...parts, when].filter(Boolean).join(' · '); };
+  const showFailure = (msg) => body.replaceChildren(h('div', { class: 'reader-fail', role: 'alert' },
+    h('p', { class: 'reader-fail-msg' }, `Couldn't load this article in Sift: ${msg}`),
+    summary(),
+    h('div', { class: 'toolbar' }, openOriginal(c, { primary: true }), h('button', { class: 'btn', onclick: () => load() }, 'Try again'))));
+
+  async function load() {
+    const video = youtubeId(c.url);
+    if (video) {
+      body.replaceChildren(...[
+        h('div', { class: 'reader-video' }, h('iframe', {
+          src: `https://www.youtube-nocookie.com/embed/${video}`, title: c.title, loading: 'lazy', allowfullscreen: true,
+          allow: 'accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen', referrerpolicy: 'strict-origin-when-cross-origin',
+        })),
+        summary(), h('div', { class: 'toolbar' }, openOriginal(c, { label: 'Watch on YouTube' }))].filter(Boolean));
+      return;
+    }
+    body.replaceChildren(readerSkeleton());
+    try {
+      let res = readCache.get(id);
+      if (!res) res = await data.fetcher('read', { id });
+      if (!alive()) return;
+      if (res?.status !== 'ok') throw new Error(res?.error || 'the page could not be read');
+      const frag = sanitiseHtml(res.html || '');
+      if (!frag.textContent.trim() && !frag.querySelector('img')) throw new Error('no readable text was found on the page');
+      readCache.set(id, res);
+      const lead = safeUrl(res.lead_image);
+      const hasLead = lead && [...frag.querySelectorAll('img')].some((i) => i.getAttribute('src') === lead);
+      body.replaceChildren(...[
+        lead && !hasLead ? h('img', { class: 'reader-lead', src: lead, alt: '', referrerpolicy: 'no-referrer', onerror: (e) => e.target.remove() }) : null,
+        frag].filter(Boolean));
+      const mins = res.text_length ? Math.max(1, Math.round(res.text_length / 1100)) : 0;
+      const by = res.byline && !/^by\s/i.test(res.byline) ? `By ${res.byline}` : res.byline;
+      setByline([by, res.site_name && res.site_name !== c.source ? res.site_name : null, mins ? `${mins} min read` : null]);
+    } catch (e) {
+      if (alive()) showFailure(e.message || String(e));
+    }
+  }
+  load();
+}
+
 // ---------- saved ----------
 async function renderSaved() {
   view.replaceChildren(h('div', { class: 'skeleton' }));
   try {
     const { items, cards } = await data.saved();
     const all = [
-      ...items.map((r) => ({ at: r.saved_at, el: renderCard({ key: `item:${r.id}`, kind: 'article', item_id: r.id, topic_id: r.topic_id, title: r.title, summary: (r.summary || '').trim(), url: r.url, domain: r.domain, image: r.image, source: r.source_name, comments_url: r.comments_url, score: r.community_score, comments: r.comment_count, published_at: r.published_at, reaction: r.reaction, saved: true }) })),
+      ...items.map((r) => ({ at: r.saved_at, el: renderCard({ key: `item:${r.id}`, kind: 'article', item_id: r.id, topic_id: r.topic_id, title: r.title, summary: (r.summary || '').trim(), url: r.url, domain: r.domain, image: r.image, source: r.source_name, source_id: r.source_id, comments_url: r.comments_url, score: r.community_score, comments: r.comment_count, published_at: r.published_at, reaction: r.reaction, saved: true }) })),
       ...cards.map((c) => ({ at: c.saved_at, el: renderCard({ ...c.payload, topic_id: c.topic_id ?? c.payload.topic_id }, { savedId: c.id }) })),
     ].sort((a, b) => b.at - a.at);
     view.replaceChildren(all.length ? h('div', { class: 'feed saved-list' }, all.map((x) => x.el))
@@ -628,45 +942,256 @@ async function renderSaved() {
 // ---------- settings ----------
 const TABS = [['topics', 'Topics'], ['balance', 'Balance'], ['sources', 'Sources'], ['cards', 'Cards'], ['decks', 'Decks']];
 
+let settingsTab = null;
 async function renderSettings(tab = 'sources') {
+  if (tab !== settingsTab) Object.values(BULK).forEach((b) => { b.select = false; b.sel.clear(); }); // selection never outlives its tab
+  settingsTab = tab;
   await loadMeta().catch(() => {});
   const seg = h('div', { class: 'seg', role: 'tablist' }, TABS.map(([k, label]) => h('button', { 'aria-pressed': String(k === tab), onclick: () => { location.hash = `#/settings/${k}`; } }, label)));
   const body = h('div');
+  const mutedBtn = h('button', { class: 'btn', id: 'muted-btn', onclick: openMutedSheet }, 'Muted domains');
+  data.mutedDomains().then((list) => { mutedBtn.textContent = `Muted domains (${list.length})`; }).catch(() => {});
   const footer = h('div', { class: 'toolbar', style: { justifyContent: 'center', marginTop: '32px' } },
+    mutedBtn,
     h('button', { class: 'btn', onclick: async () => { await data.signOut(); location.reload(); } }, 'Sign out'));
   view.replaceChildren(seg, body, footer);
   try { await SETTINGS[tab](body); } catch (e) { body.replaceChildren(h('p', { class: 'status' }, e.message)); }
 }
-const rerender = () => { feed.dirty = true; renderSettings(route().arg); };
+const rerender = async () => { // keeps the scroll position; filters and search live in BULK
+  feed.dirty = true;
+  const y = scrollY;
+  await renderSettings(route().arg);
+  scrollTo(0, y);
+};
 
 function toggle(checked, onchange) {
   const input = h('input', { type: 'checkbox', onclick: (e) => e.stopPropagation(), onchange: (e) => onchange(e.target.checked) });
   input.checked = !!checked;
   return h('label', { class: 'toggle', onclick: (e) => e.stopPropagation() }, input, h('span'));
 }
-const rowEl = ({ dot, title, desc, err, right, onclick }) => h('div', { class: 'row', onclick, role: 'button', tabindex: 0 },
-  dot ? h('span', { class: 'dot', style: { '--c': dot } }) : null,
-  h('div', { class: 'grow' }, h('div', { class: 'title' }, title), desc ? h('div', { class: `desc${err ? ' err' : ''}` }, desc) : null), right);
+const rowEl = ({ dot, title, desc, err, right, onclick, check, label, off }) => h('div', {
+  class: `row${off ? ' off' : ''}`, onclick, tabindex: 0,
+  role: check == null ? 'button' : 'checkbox', 'aria-checked': check == null ? null : String(check), 'aria-label': label,
+  onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onclick?.(e); } },
+},
+check == null ? null : tick(check),
+dot ? h('span', { class: 'dot', style: { '--c': dot } }) : null,
+h('div', { class: 'grow' }, h('div', { class: 'title' }, title), desc ? h('div', { class: `desc${err ? ' err' : ''}` }, desc) : null), right);
+
+// ---------- bulk management (search, filters, collapsible groups, multi-select) ----------
+const BULK = {}; // per-tab UI state; survives rerender() so filters and search stay put
+const bulkState = (tab) => (BULK[tab] ||= { q: '', topic: '', kind: '', category: '', status: 'all', select: false, sel: new Set() });
+const plural = (n, [one, many]) => `${n} ${n === 1 ? one : many}`;
+const tick = (on) => h('span', { class: `tk${on ? ' on' : ''}`, 'aria-hidden': 'true' });
+
+/** Single-choice list in a sheet. options: [[value, label, dotColour?]]. */
+function pickerSheet(title, options, current, onPick) {
+  const pick = (v) => { closeSheet(); onPick(v); };
+  openSheet(title, h('div', { class: 'list', role: 'radiogroup', 'aria-label': title }, options.map(([v, label, dot]) => h('div', {
+    class: 'row', role: 'radio', 'aria-checked': String(v === current), tabindex: 0, onclick: () => pick(v),
+    onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(v); } },
+  }, tick(v === current), dot ? h('span', { class: 'dot', style: { '--c': dot } }) : null, h('div', { class: 'grow' }, h('div', { class: 'title' }, label))))));
+}
+
+/**
+ * A settings list with a sticky toolbar (search + filters), optional topic groups that collapse, and a
+ * selection mode with a bulk action bar. `spec` describes the data; see SETTINGS.* for examples.
+ */
+function manage(body, spec) {
+  const st = bulkState(spec.tab);
+  const { items, noun } = spec;
+  const statuses = [['all', 'All', () => true], ...spec.statuses];
+  const filterActive = () => !!(st.q.trim() || st.topic || st.kind || st.category || st.status !== 'all');
+  let session = {}; // collapse overrides made while a filter is active; reset whenever the filters change
+  const collapsedKey = `collapsed:${spec.tab}`;
+
+  const matches = (it) => {
+    if (st.topic && it.topic_id !== +st.topic) return false;
+    if (st.kind && it.kind !== st.kind) return false;
+    if (st.category && (it.category || '') !== st.category) return false;
+    if (!statuses.find(([k]) => k === st.status)[2](it)) return false;
+    const hay = `${spec.search(it)} ${spec.grouped ? topicById(it.topic_id).name : ''}`.toLowerCase();
+    return st.q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w));
+  };
+  const shown = () => items.filter(matches);
+
+  // ---- toolbar ----
+  const search = h('input', { type: 'search', class: 'bulk-search', placeholder: `Search ${noun[1]}`, 'aria-label': `Search ${noun[1]}`, autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false' });
+  search.value = st.q;
+  search.addEventListener('input', () => { st.q = search.value; filtersChanged(); });
+  const selectBtn = h('button', { class: 'btn bulk-select', onclick: () => { st.select = !st.select; st.sel.clear(); paint(); } });
+  const chip = (onclick) => h('button', { class: 'chip', onclick });
+  const topicChip = spec.grouped ? chip(() => pickerSheet('Filter by topic', [['', 'All topics'], ...meta.topics.map((t) => [String(t.id), t.name, t.color])], st.topic,
+    (v) => { st.topic = v; filtersChanged(); })) : null;
+  const kindChip = spec.kinds ? chip(() => pickerSheet('Filter by type', [['', 'All types'], ...Object.entries(spec.kinds).map(([k, v]) => [k, v.label])], st.kind,
+    (v) => { st.kind = v; filtersChanged(); })) : null;
+  const catChip = spec.hasCategory ? chip(() => pickerSheet('Filter by category', [['', 'All categories'], ...[...new Set(items.map((t) => t.category).filter(Boolean))].sort().map((c) => [c, c])], st.category,
+    (v) => { st.category = v; filtersChanged(); })) : null;
+  const statusChips = statuses.map(([k, label]) => { const b = chip(() => { st.status = k; filtersChanged(); }); b.textContent = label; b.dataset.status = k; return b; });
+  const chipsRow = h('div', { class: 'bulk-chips', role: 'group', 'aria-label': 'Filters' }, topicChip, kindChip, catChip, statusChips);
+  const count = h('span', { class: 'bulk-count', role: 'status' });
+  const selAll = h('button', { class: 'linkbtn', onclick: () => { shown().forEach((it) => st.sel.add(it.id)); paint(); } }, 'Select all shown');
+  const selNone = h('button', { class: 'linkbtn', onclick: () => { st.sel.clear(); paint(); } }, 'Clear');
+  const toolbar = h('div', { class: 'bulk-toolbar' }, h('div', { class: 'bulk-top' }, search, selectBtn), chipsRow,
+    h('div', { class: 'bulk-countrow' }, count, h('span', { class: 'grow' }), selAll, selNone));
+
+  // ---- action bar ----
+  const barCount = h('b', {});
+  const ctx = {
+    noun,
+    enable: (v) => ({ label: (v ? spec.on : spec.off).label, run: (ids) => ctx.apply(() => data.updateMany(spec.table, ids, { enabled: v }), `${(v ? spec.on : spec.off).done} ${plural(ids.length, noun)}`) }),
+    remove: (warn) => ({
+      label: 'Delete…', danger: true,
+      run: (ids) => { if (confirm(warn(plural(ids.length, noun)))) return ctx.apply(() => data.removeMany(spec.table, ids), `Deleted ${plural(ids.length, noun)}`); },
+    }),
+    /** Run a bulk change, then leave selection mode and re-render with filters and search intact. */
+    async apply(fn, msg) {
+      bar.classList.add('busy');
+      try { const r = await fn(); if (r?.msg) msg = r.msg; } catch (e) { bar.classList.remove('busy'); paint(); return fail(e); }
+      closeSheet(); st.select = false; st.sel.clear(); toast(msg); rerender();
+    },
+  };
+  const actionBtns = spec.actions(ctx).filter(Boolean).map((a) => {
+    const b = h('button', { class: `btn${a.danger ? ' danger' : ''}`, 'aria-label': `${a.label.replace('…', '')} for selected ${noun[1]}`, onclick: () => a.run([...st.sel], b) }, a.label);
+    return b;
+  });
+  const bar = h('div', { class: 'bulk-bar', role: 'toolbar', 'aria-label': `Actions for selected ${noun[1]}`, hidden: true },
+    h('div', { class: 'bulk-bar-n', 'aria-live': 'polite' }, barCount, ' selected'), h('div', { class: 'bulk-actions' }, actionBtns));
+
+  const list = h('div', { class: 'bulk-list' });
+  body.append(toolbar, list, bar);
+
+  function filtersChanged() { session = {}; paint(); }
+
+  function rowFor(it) {
+    const r = spec.row(it);
+    const common = { ...r, off: it.enabled === false };
+    if (st.select) {
+      const flip = () => { if (st.sel.has(it.id)) st.sel.delete(it.id); else st.sel.add(it.id); paint(true); };
+      return rowEl({ ...common, check: st.sel.has(it.id), label: `Select ${r.title}`, onclick: flip });
+    }
+    return rowEl({
+      ...common, onclick: () => spec.onOpen(it),
+      right: toggle(it.enabled, async (v) => {
+        const prev = it.enabled; it.enabled = v;
+        try { await data.update(spec.table, it.id, { enabled: v }); feed.dirty = true; } catch (e) { it.enabled = prev; fail(e); }
+        paint(true);
+      }),
+    });
+  }
+  // Groups default to topics; a spec can supply its own (Topics groups by category).
+  const groupDefs = () => (spec.groups ? spec.groups(items) : meta.topics.map((t) => ({ id: t.id, name: t.name, color: t.color, test: (x) => x.topic_id === t.id })));
+  const addRowEl = (a) => (!st.select && a && !filterActive() ? rowEl({ title: h('span', { class: 'add-row' }, a.label), onclick: a.onclick }) : null);
+
+  function groupEl(t, rows) {
+    const stored = store.get(collapsedKey, {});
+    // Many groups: start collapsed, but never hide matches while searching or filtering.
+    const collapsed = filterActive() ? !!session[t.id] : (t.id in stored ? !!stored[t.id] : groupDefs().length > 5);
+    const off = rows.filter((x) => x.enabled === false).length;
+    const errs = spec.isError ? rows.filter(spec.isError).length : 0;
+    const summary = [String(rows.length), off ? `${off} off` : null, errs ? `${errs} error${errs === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ');
+    const selected = rows.filter((x) => st.sel.has(x.id)).length;
+    const flip = () => {
+      if (filterActive()) session[t.id] = !collapsed;
+      else store.set(collapsedKey, { ...stored, [t.id]: !collapsed });
+      paint(true);
+    };
+    const setGroup = (on) => () => { rows.forEach((x) => (on ? st.sel.add(x.id) : st.sel.delete(x.id))); paint(true); };
+    const a = spec.addRow?.(t);
+    return h('section', { class: 'grp' },
+      h('div', { class: 'grp-h' },
+        h('button', { class: 'grp-toggle', 'aria-expanded': String(!collapsed), 'aria-label': `${t.name}, ${summary.replace(/ · /g, ', ')}`, onclick: flip },
+          h('span', { class: 'chev', 'aria-hidden': 'true' }), t.color ? h('span', { class: 'dot', style: { '--c': t.color } }) : null,
+          h('span', { class: 'grp-name' }, t.name), h('span', { class: 'grp-sum' }, summary + (st.select && selected ? ` · ${selected} selected` : ''))),
+        st.select && rows.length ? h('span', { class: 'grp-sel' },
+          h('button', { class: 'linkbtn', 'aria-label': `Select all in ${t.name}`, onclick: setGroup(true) }, 'All'),
+          h('button', { class: 'linkbtn', 'aria-label': `Select none in ${t.name}`, onclick: setGroup(false) }, 'None')) : null),
+      collapsed ? null : h('div', { class: 'list' }, rows.map(rowFor), addRowEl(a)));
+  }
+
+  function paint(keepScroll) {
+    const rows = shown();
+    const ids = new Set(rows.map((x) => x.id));
+    for (const id of st.sel) if (!ids.has(id)) st.sel.delete(id); // selection only ever holds what is visible under the filters
+
+    selectBtn.textContent = st.select ? 'Done' : 'Select';
+    selectBtn.classList.toggle('primary', st.select);
+    selectBtn.setAttribute('aria-pressed', String(st.select));
+    selectBtn.setAttribute('aria-label', st.select ? 'Leave selection mode' : `Select ${noun[1]}`);
+    const setChip = (el, label, on) => { if (el) { el.textContent = `${label} ▾`; el.setAttribute('aria-pressed', String(on)); } };
+    setChip(topicChip, st.topic ? topicById(+st.topic).name : 'Topic', !!st.topic);
+    setChip(kindChip, st.kind ? spec.kinds[st.kind]?.label || st.kind : 'Type', !!st.kind);
+    setChip(catChip, st.category || 'Category', !!st.category);
+    statusChips.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.status === st.status)));
+    count.textContent = `${rows.length} of ${items.length} ${noun[1]}`;
+    selAll.hidden = selNone.hidden = !st.select;
+    selAll.disabled = !rows.length || st.sel.size === rows.length;
+    selNone.disabled = !st.sel.size;
+    bar.hidden = !st.select;
+    barCount.textContent = st.sel.size;
+    actionBtns.forEach((b) => { b.disabled = !st.sel.size; });
+
+    const y = keepScroll ? scrollY : null;
+    let content;
+    if (!rows.length && items.length) {
+      content = h('div', { class: 'empty small' }, h('p', {}, `No ${noun[1]} match.`),
+        h('button', { class: 'btn', onclick: () => { Object.assign(st, { q: '', topic: '', kind: '', category: '', status: 'all' }); search.value = ''; filtersChanged(); } }, 'Clear search and filters'));
+    } else if (spec.grouped || spec.groups) {
+      const defs = groupDefs();
+      if (spec.groups && defs.length === 1 && defs[0].flat) content = [h('div', { class: 'list' }, rows.map(rowFor))];
+      else {
+        content = defs.filter((g) => !st.topic || g.id === +st.topic).map((g) => [g, rows.filter(g.test)])
+          .filter(([, r]) => r.length || (!filterActive() && !st.select && !spec.groups)).map(([g, r]) => groupEl(g, r));
+      }
+    } else {
+      content = [h('div', { class: 'list' }, rows.map(rowFor), addRowEl(spec.addRow))];
+    }
+    if (spec.footer && !st.select && !filterActive()) content = [...[content].flat(), h('div', { class: 'list', style: { marginTop: '14px' } }, spec.footer())];
+    list.replaceChildren(...[content].flat());
+    list.classList.toggle('selecting', st.select);
+    if (y != null) scrollTo(0, y);
+  }
+  paint();
+}
 
 const SETTINGS = {
   async topics(body) {
     const topics = await data.topics();
     const total = topics.filter((t) => t.enabled).reduce((s, t) => s + t.weight, 0) || 1;
-    const groups = topicGroups(topics);
-    const categorised = groups.some((g) => g.raw);
-    const rows = (ts) => ts.map((t) => rowEl({
-      dot: t.color, title: t.name,
-      desc: t.enabled ? `${Math.round((t.weight / total) * 100)}% of feed · ${Math.round(t.curated_ratio * 100)}% articles when available` : 'Hidden',
-      right: toggle(t.enabled, async (v) => { await data.update('topics', t.id, { enabled: v }).catch(fail); rerender(); }),
-      onclick: () => editTopic(t),
-    }));
-    body.append(
-      h('p', { class: 'intro' }, topics.length ? 'Topics are the channels in your feed. Set how much each one gets in Balance, and group them with a category so the feed\'s topic picker stays tidy.' : 'Topics are the channels in your feed. Start from a starter pack or add your own.'),
-      ...(categorised ? groups.flatMap((g) => [h('div', { class: 'section-h' }, g.name), h('div', { class: 'list' }, rows(g.topics))]) : [h('div', { class: 'list' }, rows(topics))]),
-      h('div', { class: 'list', style: { marginTop: '14px' } },
+    const hasCategory = true;
+    body.append(h('p', { class: 'intro' }, topics.length ? 'Topics are the channels in your feed. Set how much each one gets in Balance, and group them with a category so the feed\'s topic picker stays tidy.' : 'Topics are the channels in your feed. Start from a starter pack or add your own.'));
+    manage(body, {
+      tab: 'topics', noun: ['topic', 'topics'], items: topics, hasCategory,
+      // Grouped by category, like the feed's topic picker; with no categories at all it is one flat list.
+      groups: (all) => topicGroups(all).map((g) => ({ id: g.raw || '__other', name: g.name, flat: !g.raw, test: (x) => (x.category || '').trim() === g.raw })),
+      search: (t) => `${t.name} ${t.category || ''}`,
+      statuses: [['on', 'Shown', (t) => t.enabled], ['off', 'Hidden', (t) => !t.enabled]],
+      row: (t) => ({
+        dot: t.color, title: t.name,
+        desc: t.enabled ? `${Math.round((t.weight / total) * 100)}% of feed · ${Math.round(t.curated_ratio * 100)}% articles when available` : 'Hidden',
+      }),
+      table: 'topics', onOpen: editTopic,
+      footer: () => [
         rowEl({ title: h('span', { class: 'add-row' }, '+ Add topic'), onclick: () => editTopic(null) }),
-        rowEl({ title: h('span', { class: 'add-row' }, '+ Add starter pack'), desc: 'Ready-made topics with sources and card types', onclick: openPackPicker })),
-    );
+        rowEl({ title: h('span', { class: 'add-row' }, '+ Add starter pack'), desc: 'Ready-made topics with sources and card types', onclick: openPackPicker }),
+      ],
+      on: { label: 'Show', done: 'Showing' }, off: { label: 'Hide', done: 'Hid' },
+      actions: (ctx) => [
+        ctx.enable(true), ctx.enable(false),
+        {
+          label: 'Set category…', run: (ids) => {
+            const cats = [...new Set(topics.map((t) => (t.category || '').trim()).filter(Boolean))].sort();
+            const input = h('input', { type: 'text', list: 'bulk-categories', placeholder: 'e.g. Learning', autocomplete: 'off' });
+            openSheet('Set category', h('div', {},
+              field(`Category for ${plural(ids.length, ctx.noun)}`, input, 'Leave empty to clear the category.'),
+              h('datalist', { id: 'bulk-categories' }, cats.map((c) => h('option', { value: c }))),
+              h('button', { class: 'btn primary', onclick: () => ctx.apply(() => data.updateMany('topics', ids, { category: input.value.trim() }), `Updated ${plural(ids.length, ctx.noun)}`) }, 'Apply')));
+            input.focus();
+          },
+        },
+        ctx.remove((n) => `Delete ${n}? This also deletes all their sources and card types.`),
+      ],
+    });
   },
   async balance(body) {
     const topics = (await data.topics()).filter((t) => t.enabled);
@@ -747,19 +1272,54 @@ const SETTINGS = {
   async sources(body) {
     const sources = await data.sourceStats();
     body.append(h('p', { class: 'intro' }, 'Where articles come from. Strict sources and score thresholds keep the feed useful.'));
-    for (const t of meta.topics) {
-      const mine = sources.filter((s) => s.topic_id === t.id);
-      body.append(h('div', { class: 'section-h' }, h('span', { class: 'dot', style: { '--c': t.color } }), t.name),
-        h('div', { class: 'list' },
-          mine.map((s) => rowEl({
-            title: s.name,
-            desc: s.last_error ? `Error: ${s.last_error}` : `${meta.source_kinds[s.kind]?.label || s.kind} · ${s.unseen_count} unread${s.last_fetched ? ` · fetched ${ago(s.last_fetched)} ago` : ' · not fetched yet'}`,
-            err: !!s.last_error,
-            right: toggle(s.enabled, async (v) => { await data.update('sources', s.id, { enabled: v }).catch(fail); feed.dirty = true; }),
-            onclick: () => editSource(s),
-          })),
-          rowEl({ title: h('span', { class: 'add-row' }, '+ Add source'), onclick: () => editSource({ topic_id: t.id, kind: 'rss', config: {}, weight: 1, enabled: true }) })));
-    }
+    manage(body, {
+      tab: 'sources', noun: ['source', 'sources'], items: sources, grouped: true, kinds: meta.source_kinds,
+      search: (s) => `${s.name} ${s.config?.url || ''} ${s.include || ''}`,
+      isError: (s) => !!s.last_error,
+      statuses: [
+        ['on', 'On', (s) => s.enabled], ['off', 'Off', (s) => !s.enabled], ['errors', 'Errors', (s) => !!s.last_error],
+        ['read', 'No unread', (s) => !s.unseen_count], ['never', 'Never fetched', (s) => !s.last_fetched],
+      ],
+      row: (s) => ({
+        title: s.name,
+        desc: s.last_error ? `Error: ${s.last_error}` : `${meta.source_kinds[s.kind]?.label || s.kind} · ${s.unseen_count} unread${s.last_fetched ? ` · fetched ${ago(s.last_fetched)} ago` : ' · not fetched yet'}`,
+        err: !!s.last_error,
+      }),
+      table: 'sources', onOpen: editSource,
+      addRow: (t) => ({ label: '+ Add source', onclick: () => editSource({ topic_id: t.id, kind: 'rss', config: {}, weight: 1, enabled: true }) }),
+      on: { label: 'Turn on', done: 'Turned on' }, off: { label: 'Turn off', done: 'Turned off' },
+      actions: (ctx) => [
+        ctx.enable(true), ctx.enable(false),
+        {
+          label: 'Move to topic…', run: (ids) => pickerSheet(`Move ${plural(ids.length, ctx.noun)} to`, meta.topics.map((t) => [t.id, t.name, t.color]), null,
+            (topicId) => ctx.apply(() => data.updateMany('sources', ids, { topic_id: topicId }), `Moved ${plural(ids.length, ctx.noun)} to ${topicById(topicId).name}`)),
+        },
+        {
+          label: 'Weight…', run: (ids) => {
+            const input = h('input', { type: 'number', step: 0.1, min: 0, inputmode: 'decimal', value: 1 });
+            openSheet('Set weight', h('div', {},
+              field(`Weight for ${plural(ids.length, ctx.noun)}`, input, '1 = normal. Higher ranks these sources above others.'),
+              h('button', { class: 'btn primary', onclick: () => { const w = Number(input.value); return w > 0 ? ctx.apply(() => data.updateMany('sources', ids, { weight: w }), `Set weight to ${w} on ${plural(ids.length, ctx.noun)}`) : toast('Enter a weight above 0'); } }, 'Apply')));
+            input.focus(); input.select();
+          },
+        },
+        {
+          label: 'Fetch now', run: (ids, btn) => ctx.apply(async () => {
+            let added = 0, failed = 0, done = 0, next = 0;
+            const worker = async () => {
+              while (next < ids.length) {
+                const id = ids[next++];
+                try { const r = await data.fetcher('fetch_source', { id }); if (r.error) failed++; else added += r.added || 0; } catch { failed++; }
+                btn.textContent = `Fetching ${++done}/${ids.length}…`;
+              }
+            };
+            await Promise.all(Array.from({ length: Math.min(3, ids.length) }, worker));
+            return { msg: `${added} new article${added === 1 ? '' : 's'} from ${plural(ids.length, ctx.noun)}${failed ? ` · ${failed} failed` : ''}` };
+          }),
+        },
+        ctx.remove((n) => `Delete ${n} and all their articles (including saved ones)?`),
+      ],
+    });
     const fetchBtn = h('button', {
       class: 'btn',
       onclick: async () => {
@@ -776,17 +1336,16 @@ const SETTINGS = {
   async cards(body) {
     const gens = await data.generators();
     body.append(h('p', { class: 'intro' }, 'Practice cards made from code and your own decks and lists. They keep the feed going when articles run out.'));
-    for (const t of meta.topics) {
-      const mine = gens.filter((g) => g.topic_id === t.id);
-      body.append(h('div', { class: 'section-h' }, h('span', { class: 'dot', style: { '--c': t.color } }), t.name),
-        h('div', { class: 'list' },
-          mine.map((g) => rowEl({
-            title: g.name, desc: `${meta.generator_kinds[g.kind]?.label || g.kind} · weight ${(+g.weight).toFixed(1)}`,
-            right: toggle(g.enabled, async (v) => { await data.update('generators', g.id, { enabled: v }).catch(fail); feed.dirty = true; }),
-            onclick: () => editGenerator(g),
-          })),
-          rowEl({ title: h('span', { class: 'add-row' }, '+ Add card type'), onclick: () => editGenerator({ topic_id: t.id, kind: 'prompts', config: {}, weight: 1, enabled: true }) })));
-    }
+    manage(body, {
+      tab: 'cards', noun: ['card type', 'card types'], items: gens, grouped: true, kinds: meta.generator_kinds,
+      search: (g) => `${g.name} ${meta.generator_kinds[g.kind]?.label || g.kind}`,
+      statuses: [['on', 'On', (g) => g.enabled], ['off', 'Off', (g) => !g.enabled]],
+      row: (g) => ({ title: g.name, desc: `${meta.generator_kinds[g.kind]?.label || g.kind} · weight ${(+g.weight).toFixed(1)}` }),
+      table: 'generators', onOpen: editGenerator,
+      addRow: (t) => ({ label: '+ Add card type', onclick: () => editGenerator({ topic_id: t.id, kind: 'prompts', config: {}, weight: 1, enabled: true }) }),
+      on: { label: 'Turn on', done: 'Turned on' }, off: { label: 'Turn off', done: 'Turned off' },
+      actions: (ctx) => [ctx.enable(true), ctx.enable(false), ctx.remove((n) => `Delete ${n}?`)],
+    });
   },
   async decks(body) {
     const decks = await data.deckStats();
@@ -810,7 +1369,11 @@ function openSheet(title, content) {
 }
 function closeSheet() { $('#sheet').hidden = true; document.body.style.overflow = ''; }
 document.addEventListener('click', (e) => { if (e.target.closest('[data-close]')) closeSheet(); });
-document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSheet(); });
+document.addEventListener('keydown', (e) => {
+  if (e.key !== 'Escape') return;
+  if (!$('#sheet').hidden) closeSheet();
+  else if (route().name === 'read') leaveReader();
+});
 
 function field(label, input, help) {
   return h('label', { class: 'field' }, h('span', {}, label), input, help ? h('small', {}, help) : null);
@@ -1049,13 +1612,20 @@ function route() {
   const [, name = '', arg] = location.hash.replace(/^#/, '').split('/');
   return { name: name || 'feed', arg };
 }
+let routeCount = 0;
 function onRoute() {
   const r = route();
+  routeCount++;
   if (r.name !== 'feed' && feed.el?.isConnected) feed.scrollY = scrollY;
+  const reading = r.name === 'read';
+  document.body.classList.toggle('reading', reading);
+  $('.topbar').hidden = reading;
+  $('.tabbar').hidden = reading;
   document.querySelectorAll('.tabbar a').forEach((a) => (a.dataset.tab === r.name ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current')));
   renderChips();
   closeSheet();
-  if (r.name === 'saved') renderSaved();
+  if (reading) renderReader(Number(r.arg));
+  else if (r.name === 'saved') renderSaved();
   else if (r.name === 'settings') renderSettings(TABS.some(([k]) => k === r.arg) ? r.arg : 'sources');
   else renderFeed();
 }

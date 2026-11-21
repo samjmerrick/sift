@@ -62,7 +62,7 @@ export function rankItems(state, topicId, exclude, now = Date.now()) {
 
 export function articleCard(r) {
   return {
-    key: `item:${r.id}`, kind: 'article', item_id: r.id, topic_id: r.topic_id,
+    key: `item:${r.id}`, kind: 'article', item_id: r.id, topic_id: r.topic_id, source_id: r.source_id,
     title: r.title, summary: (r.summary || '').trim(), url: r.url, domain: r.domain, image: r.image,
     source: r.source_name, comments_url: r.comments_url, score: r.community_score, comments: r.comment_count,
     published_at: r.published_at, reaction: r.reaction, saved: !!r.saved_at,
