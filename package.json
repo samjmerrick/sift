@@ -19,6 +19,7 @@
     "postgres": "3.4.9"
   },
   "devDependencies": {
-    "@supabase/supabase-js": "2.118.0"
+    "@supabase/supabase-js": "2.118.0",
+    "linkedom": "0.18.15"
   }
 }
