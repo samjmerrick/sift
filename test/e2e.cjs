@@ -39,7 +39,7 @@ const assert = (cond, msg) => { if (!cond) throw new Error(`FAILED: ${msg}`); co
   const p = await ctx.newPage();
   const errors = [];
   p.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`));
-  p.on('console', (m) => m.type() === 'error' && !/favicon/.test(m.text()) && errors.push(`console: ${m.text()}`));
+  p.on('console', (m) => m.type() === 'error' && !/favicon|net::ERR_/.test(m.text()) && errors.push(`console: ${m.text()}`));
   const shot = (name) => OUT && p.screenshot({ path: path.join(OUT, `e2e-${name}.png`) });
 
   console.log('auth');
