@@ -231,21 +231,70 @@ const pickTopics = async (p, names) => {
   const [offAfter] = await sql`select count(*)::int n from sources where id = any(${hackerIds}) and not enabled`;
   assert(offAfter.n === 0, 'bulk turn on restores them');
 
-  await p.click('.seg button:has-text("Decks")');
-  await p.waitForSelector('text=+ New deck');
-  await p.click('text=+ New deck');
+  console.log('decks from the card type editor');
+  assert((await p.$$('.seg button:has-text("Decks")')).length === 0, 'there is no separate Decks tab');
+  await p.click('.seg button:has-text("Cards")');
+  await p.waitForSelector('.grp-name:text-is("Chess")');
+  await p.click('.grp:has(.grp-name:text-is("Chess")) >> text=+ Add card type');
+  await p.selectOption('.sheet select >> nth=0', 'flashcards');
+  assert(await p.isDisabled('.sheet .deck-edit'), 'Edit deck is disabled until a deck is chosen');
+  await p.fill('.sheet .field:has-text("Name") input[type=text]', 'Opening cards'); // survives the round trip to the deck editor
+  await p.click('.sheet .deck-new');
+  await p.waitForSelector('#sheet-title:has-text("New deck")');
   await p.fill('.sheet input[type=text]', 'Openings');
   await p.fill('.sheet textarea', 'e4 e5 Nf3 Nc6 Bc4, Italian Game\n"e4 c5", Sicilian Defence, "most popular reply to e4"');
   await p.click('.sheet .btn.primary');
-  await p.waitForTimeout(600);
+  await p.waitForSelector('#sheet-title:has-text("New card type")');
   const deckCards = await sql`select c.* from cards c join decks d on d.id = c.deck_id where d.name = 'Openings' order by position`;
   assert(deckCards.length === 2 && deckCards[1].note === 'most popular reply to e4', 'deck import parses CSV with quotes');
-  await shot('decks');
+  const [openings] = await sql`select id from decks where name = 'Openings'`;
+  assert((await p.inputValue('.sheet .deck-pick select')) === String(openings.id), 'the new deck is selected when the card type editor reopens');
+  assert((await p.inputValue('.sheet .field:has-text("Name") input[type=text]')) === 'Opening cards', 'the unsaved name is kept');
+  await shot('card-type-deck');
+  await p.click('.sheet .deck-edit');
+  await p.waitForSelector('#sheet-title:has-text("Edit deck")');
+  await p.waitForSelector('.deck-cards .row:has-text("Italian Game")');
+  await p.fill('.sheet textarea', "d4 d5 c4, Queen's Gambit");
+  await p.click('.sheet .btn.primary');
+  await p.waitForSelector('#sheet-title:has-text("New card type")');
+  assert((await sql`select count(*)::int n from cards where deck_id = ${openings.id}`)[0].n === 3, 'editing a deck from the card type editor adds cards');
+  await p.click('.sheet .btn.primary:has-text("Save")');
+  await p.waitForSelector('.toast.show:has-text("Saved")');
+  const [fc] = await sql`select g.* from generators g where g.kind = 'flashcards' and g.name = 'Opening cards'`;
+  assert(fc && fc.config.deck_id === Number(openings.id), 'the flashcards card type points at the new deck');
+
+  // A notes card type on the same deck, then removing a scratch deck and returning to the editor.
+  await p.click('.grp:has(.grp-name:text-is("Chess")) >> text=+ Add card type');
+  await p.selectOption('.sheet select >> nth=0', 'notes');
+  await p.selectOption('.sheet .deck-pick select', String(openings.id));
+  await p.click('.sheet .btn.primary:has-text("Save")');
+  await p.waitForSelector('.toast.show:has-text("Saved")');
+  const [nt] = await sql`select * from generators where kind = 'notes'`;
+  assert(nt && nt.config.deck_id === Number(openings.id) && Object.keys(nt.config).length === 1, 'a notes card type is saved with just its deck');
+  await p.click('.row:has-text("Notes (reading)")');
+  await p.click('.sheet .deck-new');
+  await p.fill('.sheet input[type=text]', 'Scratch');
+  await p.click('.sheet .btn.primary');
+  await p.waitForSelector('#sheet-title:has-text("Edit card type")');
+  await p.click('.sheet .deck-edit');
+  await p.waitForSelector('#sheet-title:has-text("Edit deck")');
+  p.once('dialog', (d) => d.accept());
+  await p.click('.sheet .btn.danger:has-text("Delete deck")');
+  await p.waitForSelector('#sheet-title:has-text("Edit card type")');
+  assert((await p.inputValue('.sheet .deck-pick select')) === '' && (await sql`select count(*)::int n from decks where name = 'Scratch'`)[0].n === 0, 'deleting a deck returns to the card type editor with no deck chosen');
+  await p.click('.sheet-head [data-close]');
+  await p.evaluate(() => { location.hash = '#/settings/decks'; });
+  await p.waitForSelector('.intro:has-text("Decks are created and edited")');
+  assert(true, '#/settings/decks falls back to the Cards tab');
 
   await p.click('a[data-tab=feed]');
   await pickTopics(p, 'Chess');
   await p.waitForSelector('.k-prompt');
   assert(true, 'new topic and card type appear in the feed');
+  await p.waitForSelector('.k-note .note-title');
+  assert((await p.textContent('.k-note .meta')).includes('Openings'), 'a notes card shows the deck name and its text');
+  await p.waitForSelector('.k-note .act.save');
+  await shot('notes-card');
 
   await p.click('a[data-tab=settings]');
   await p.click('button:has-text("Sign out")');

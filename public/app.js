@@ -1000,7 +1000,7 @@ async function renderSaved() {
 }
 
 // ---------- settings ----------
-const TABS = [['topics', 'Topics'], ['balance', 'Balance'], ['sources', 'Sources'], ['cards', 'Cards'], ['decks', 'Decks']];
+const TABS = [['topics', 'Topics'], ['balance', 'Balance'], ['sources', 'Sources'], ['cards', 'Cards']];
 
 let settingsTab = null;
 async function renderSettings(tab = 'sources') {
@@ -1354,7 +1354,7 @@ const SETTINGS = {
   },
   async cards(body) {
     const gens = await data.generators();
-    body.append(h('p', { class: 'intro' }, 'Practice cards made from code and your own decks and lists. They keep the feed going when articles run out.'));
+    body.append(h('p', { class: 'intro' }, 'Practice cards made from code and your own decks and lists. They keep the feed going when articles run out. Decks are created and edited from a Flashcards or Notes card type.'));
     manage(body, {
       tab: 'cards', noun: ['card type', 'card types'], items: gens, grouped: true, kinds: meta.generator_kinds,
       search: (g) => `${g.name} ${meta.generator_kinds[g.kind]?.label || g.kind}`,
@@ -1365,15 +1365,6 @@ const SETTINGS = {
       on: { label: 'Turn on', done: 'Turned on' }, off: { label: 'Turn off', done: 'Turned off' },
       actions: (ctx) => [ctx.enable(true), ctx.enable(false), ctx.remove((n) => `Delete ${n}?`)],
     });
-  },
-  async decks(body) {
-    const decks = await data.deckStats();
-    body.append(
-      h('p', { class: 'intro' }, 'Flashcard decks for spaced repetition. Show one in the feed by adding a "Flashcards" card type.'),
-      h('div', { class: 'list' },
-        decks.map((d) => rowEl({ title: d.name, desc: `${d.cards} cards · ${d.studied || 0} studied · ${d.due_now || 0} due now`, onclick: () => editDeck(d) })),
-        rowEl({ title: h('span', { class: 'add-row' }, '+ New deck'), onclick: () => editDeck(null) })),
-    );
   },
 };
 
@@ -1404,7 +1395,8 @@ function topicSelect(value) {
 }
 
 /** Build inputs from a kind's field schema. Returns { el, read() }. */
-function schemaFields(fields, config) {
+/** `opts.onDeck(deck | null)` opens the deck editor from a deck field (the form is rebuilt afterwards by the caller). */
+function schemaFields(fields, config, opts = {}) {
   const getters = {};
   const els = fields.map((f) => {
     const v = config[f.key] ?? f.default;
@@ -1418,8 +1410,14 @@ function schemaFields(fields, config) {
       }
       case 'select': input = h('select', {}, f.options.map((o) => h('option', { value: o }, o.replace(/_/g, ' ')))); input.value = v ?? f.options[0]; getters[f.key] = () => input.value; break;
       case 'deck': {
-        input = h('select', {}, h('option', { value: '' }, '— choose a deck —'), meta.decks.map((d) => h('option', { value: d.id }, `${d.name} (${d.cards})`)));
-        input.value = v ?? ''; getters[f.key] = () => Number(input.value) || null; break;
+        const sel = h('select', {}, h('option', { value: '' }, '— choose a deck —'), meta.decks.map((d) => h('option', { value: d.id }, `${d.name} (${d.cards})`)));
+        sel.value = v ?? '';
+        if (sel.value !== String(v ?? '')) sel.value = ''; // the deck no longer exists
+        getters[f.key] = () => Number(sel.value) || null;
+        const edit = h('button', { type: 'button', class: 'btn deck-edit', disabled: !sel.value, onclick: () => opts.onDeck?.(meta.decks.find((d) => d.id === Number(sel.value)) || null) }, 'Edit deck');
+        sel.onchange = () => { edit.disabled = !sel.value; };
+        input = h('div', { class: 'deck-pick' }, sel, h('div', { class: 'deck-btns' }, h('button', { type: 'button', class: 'btn deck-new', onclick: () => opts.onDeck?.(null) }, '+ New deck'), edit));
+        break;
       }
       case 'multiselect': {
         const chosen = new Set(String(v ?? '').split(',').map((x) => x.trim()).filter(Boolean));
@@ -1556,6 +1554,9 @@ function defaultName(kind, cfg) {
 }
 
 function editGenerator(g) {
+  // Editing a deck replaces the sheet, so the form is snapshotted and reopened with the chosen deck afterwards.
+  const reopen = (deckId) => editGenerator({ ...g, topic_id: +topic.value, kind: kind.value, name: name.value, weight: +weight.value || 1, config: { ...form.read(), deck_id: deckId } });
+  const onDeck = (d) => editDeck(d, { onDone: reopen, onBack: () => reopen(form.read().deck_id) });
   const topic = topicSelect(g.topic_id);
   const kind = h('select', {}, Object.entries(meta.generator_kinds).map(([k, v]) => h('option', { value: k }, v.label)));
   kind.value = g.kind;
@@ -1566,7 +1567,7 @@ function editGenerator(g) {
   let form;
   const renderKind = () => {
     const k = meta.generator_kinds[kind.value];
-    form = schemaFields(k.fields, kind.value === g.kind ? g.config || {} : {});
+    form = schemaFields(k.fields, kind.value === g.kind ? g.config || {} : {}, { onDeck });
     kindBox.replaceChildren(h('div', { class: 'kind-desc' }, k.description), form.el);
     if (!name.value || !g.id) name.placeholder = k.label;
   };
@@ -1591,7 +1592,8 @@ function editGenerator(g) {
     preview));
 }
 
-async function editDeck(d) {
+/** `opts` is set when opened from a card type editor: onDone(deckId | null) after a save or delete, onBack() to return unchanged. */
+async function editDeck(d, opts = {}) {
   const name = h('input', { type: 'text', value: d?.name || '', placeholder: 'e.g. Russian verbs of motion' });
   const csv = h('textarea', { rows: 8, placeholder: 'front, back, note\nидти́, to go (on foot), Я иду́ домо́й.\n…' });
   const list = h('div', { class: 'list deck-cards' });
@@ -1607,11 +1609,19 @@ async function editDeck(d) {
             if (id) await data.update('decks', id, { name: name.value.trim() });
             else id = (await data.insert('decks', { name: name.value.trim() })).id;
             if (csv.value.trim()) toast(`Added ${await data.importCards(id, csv.value)} cards`); else toast('Saved');
-            closeSheet(); rerender();
+            if (opts.onDone) { await loadMeta(); opts.onDone(id); } else { closeSheet(); rerender(); }
           } catch (e) { toast(e.message); }
         },
       }, 'Save'),
-      d ? h('button', { class: 'btn danger', onclick: () => deleteRow('decks', d, `deck "${d.name}" and its ${d.cards} cards`) }, 'Delete deck') : null),
+      opts.onBack ? h('button', { class: 'btn', onclick: opts.onBack }, 'Back') : null,
+      d ? h('button', {
+        class: 'btn danger',
+        onclick: opts.onDone ? async () => {
+          if (!confirm(`Delete deck "${d.name}" and its ${d.cards} cards?`)) return;
+          try { await data.remove('decks', d.id); await loadMeta(); } catch (e) { return fail(e); }
+          toast('Deleted'); opts.onDone(null);
+        } : () => deleteRow('decks', d, `deck "${d.name}" and its ${d.cards} cards`),
+      }, 'Delete deck') : null),
     d ? h('div', { class: 'section-h' }, 'Cards') : null, d ? list : null);
   openSheet(d ? 'Edit deck' : 'New deck', content);
   if (d) {
@@ -1643,7 +1653,7 @@ function onRoute() {
   closeSheet();
   if (reading) renderReader(Number(r.arg));
   else if (r.name === 'saved') renderSaved();
-  else if (r.name === 'settings') renderSettings(TABS.some(([k]) => k === r.arg) ? r.arg : 'sources');
+  else if (r.name === 'settings') renderSettings(r.arg === 'decks' ? 'cards' : TABS.some(([k]) => k === r.arg) ? r.arg : 'sources');
   else renderFeed();
 }
 window.addEventListener('hashchange', onRoute);

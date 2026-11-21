@@ -184,6 +184,9 @@ main { max-width: 680px; margin: 0 auto; padding: 12px 12px 24px; }
 .checks label:has(input:checked) { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 .checks input { display: none; }
 .inline-check { display: flex; align-items: center; gap: 10px; font-size: 15px; }
+.deck-pick { display: flex; flex-direction: column; gap: 8px; }
+.deck-btns { display: flex; gap: 8px; }
+.deck-btns .btn { flex: 1; padding: 7px 12px; font-size: 14px; }
 .kind-desc { font-size: 13.5px; color: var(--ink-2); background: var(--surface-2); border-radius: 10px; padding: 10px 12px; margin: -4px 0 14px; }
 .preview { margin-top: 10px; display: flex; flex-direction: column; gap: 8px; }
 .preview .pv { font-size: 14px; border-left: 3px solid var(--line); padding: 2px 0 2px 10px; }

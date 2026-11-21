@@ -36,8 +36,7 @@ Everything is edited in the app under **Settings**, with no code changes or rede
 | Topics | Name, colour, and how often a slot is an article rather than a practice card. |
 | Balance | The share of the feed each topic gets, as percentages that always add up to 100%. Moving one slider moves the others in proportion; lock a topic to hold its share. |
 | Sources | Where articles come from, with include/exclude keywords, a minimum score (Hacker News), a maximum age, and a weight. **Preview** shows what a source would give you before you save it. |
-| Card types | Which practice cards each topic gets, and their settings. |
-| Decks | Flashcard decks. Paste lines of `front, back, note`, then add a *Flashcards* card type that points at the deck. |
+| Card types | Which practice cards each topic gets, and their settings. Decks live here too: a *Flashcards* or *Notes* card type has a deck picker with **+ New deck** and **Edit deck** (paste lines of `front, back, note`). |
 
 ### Choosing what you see
 
