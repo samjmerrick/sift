@@ -709,9 +709,9 @@ const hideTopic = (c, done) => {
     dropItem: (i) => i.topic_id === c.topic_id,
     dropCard: (d) => d.topic === String(c.topic_id),
     local: () => {
-      const filtered = filterTopic === c.topic_id;
-      setEnabled(false);
-      if (filtered) { store.set('filter', null); feed.dirty = true; if (route().name === 'feed') resetFeed(); }
+      const filtered = filter.has(c.topic_id);
+      setEnabled(false); // renderChips drops it from the filter
+      if (filtered) { store.set('filter', [...filter]); feed.dirty = true; if (route().name === 'feed') resetFeed(); }
     },
     unlocal: () => setEnabled(true),
     done,
