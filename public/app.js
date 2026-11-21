@@ -628,7 +628,10 @@ async function renderSaved() {
 // ---------- settings ----------
 const TABS = [['topics', 'Topics'], ['balance', 'Balance'], ['sources', 'Sources'], ['cards', 'Cards'], ['decks', 'Decks']];
 
+let settingsTab = null;
 async function renderSettings(tab = 'sources') {
+  if (tab !== settingsTab) Object.values(BULK).forEach((b) => { b.select = false; b.sel.clear(); }); // selection never outlives its tab
+  settingsTab = tab;
   await loadMeta().catch(() => {});
   const seg = h('div', { class: 'seg', role: 'tablist' }, TABS.map(([k, label]) => h('button', { 'aria-pressed': String(k === tab), onclick: () => { location.hash = `#/settings/${k}`; } }, label)));
   const body = h('div');
@@ -637,36 +640,241 @@ async function renderSettings(tab = 'sources') {
   view.replaceChildren(seg, body, footer);
   try { await SETTINGS[tab](body); } catch (e) { body.replaceChildren(h('p', { class: 'status' }, e.message)); }
 }
-const rerender = () => { feed.dirty = true; renderSettings(route().arg); };
+const rerender = async () => { // keeps the scroll position; filters and search live in BULK
+  feed.dirty = true;
+  const y = scrollY;
+  await renderSettings(route().arg);
+  scrollTo(0, y);
+};
 
 function toggle(checked, onchange) {
   const input = h('input', { type: 'checkbox', onclick: (e) => e.stopPropagation(), onchange: (e) => onchange(e.target.checked) });
   input.checked = !!checked;
   return h('label', { class: 'toggle', onclick: (e) => e.stopPropagation() }, input, h('span'));
 }
-const rowEl = ({ dot, title, desc, err, right, onclick }) => h('div', { class: 'row', onclick, role: 'button', tabindex: 0 },
-  dot ? h('span', { class: 'dot', style: { '--c': dot } }) : null,
-  h('div', { class: 'grow' }, h('div', { class: 'title' }, title), desc ? h('div', { class: `desc${err ? ' err' : ''}` }, desc) : null), right);
+const rowEl = ({ dot, title, desc, err, right, onclick, check, label, off }) => h('div', {
+  class: `row${off ? ' off' : ''}`, onclick, tabindex: 0,
+  role: check == null ? 'button' : 'checkbox', 'aria-checked': check == null ? null : String(check), 'aria-label': label,
+  onkeydown: (e) => { if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onclick?.(e); } },
+},
+check == null ? null : tick(check),
+dot ? h('span', { class: 'dot', style: { '--c': dot } }) : null,
+h('div', { class: 'grow' }, h('div', { class: 'title' }, title), desc ? h('div', { class: `desc${err ? ' err' : ''}` }, desc) : null), right);
+
+// ---------- bulk management (search, filters, collapsible groups, multi-select) ----------
+const BULK = {}; // per-tab UI state; survives rerender() so filters and search stay put
+const bulkState = (tab) => (BULK[tab] ||= { q: '', topic: '', kind: '', category: '', status: 'all', select: false, sel: new Set() });
+const plural = (n, [one, many]) => `${n} ${n === 1 ? one : many}`;
+const tick = (on) => h('span', { class: `tk${on ? ' on' : ''}`, 'aria-hidden': 'true' });
+
+/** Single-choice list in a sheet. options: [[value, label, dotColour?]]. */
+function pickerSheet(title, options, current, onPick) {
+  const pick = (v) => { closeSheet(); onPick(v); };
+  openSheet(title, h('div', { class: 'list', role: 'radiogroup', 'aria-label': title }, options.map(([v, label, dot]) => h('div', {
+    class: 'row', role: 'radio', 'aria-checked': String(v === current), tabindex: 0, onclick: () => pick(v),
+    onkeydown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pick(v); } },
+  }, tick(v === current), dot ? h('span', { class: 'dot', style: { '--c': dot } }) : null, h('div', { class: 'grow' }, h('div', { class: 'title' }, label))))));
+}
+
+/**
+ * A settings list with a sticky toolbar (search + filters), optional topic groups that collapse, and a
+ * selection mode with a bulk action bar. `spec` describes the data; see SETTINGS.* for examples.
+ */
+function manage(body, spec) {
+  const st = bulkState(spec.tab);
+  const { items, noun } = spec;
+  const statuses = [['all', 'All', () => true], ...spec.statuses];
+  const filterActive = () => !!(st.q.trim() || st.topic || st.kind || st.category || st.status !== 'all');
+  let session = {}; // collapse overrides made while a filter is active; reset whenever the filters change
+  const collapsedKey = `collapsed:${spec.tab}`;
+
+  const matches = (it) => {
+    if (st.topic && it.topic_id !== +st.topic) return false;
+    if (st.kind && it.kind !== st.kind) return false;
+    if (st.category && (it.category || '') !== st.category) return false;
+    if (!statuses.find(([k]) => k === st.status)[2](it)) return false;
+    const hay = `${spec.search(it)} ${spec.grouped ? topicById(it.topic_id).name : ''}`.toLowerCase();
+    return st.q.toLowerCase().split(/\s+/).filter(Boolean).every((w) => hay.includes(w));
+  };
+  const shown = () => items.filter(matches);
+
+  // ---- toolbar ----
+  const search = h('input', { type: 'search', class: 'bulk-search', placeholder: `Search ${noun[1]}`, 'aria-label': `Search ${noun[1]}`, autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false' });
+  search.value = st.q;
+  search.addEventListener('input', () => { st.q = search.value; filtersChanged(); });
+  const selectBtn = h('button', { class: 'btn bulk-select', onclick: () => { st.select = !st.select; st.sel.clear(); paint(); } });
+  const chip = (onclick) => h('button', { class: 'chip', onclick });
+  const topicChip = spec.grouped ? chip(() => pickerSheet('Filter by topic', [['', 'All topics'], ...meta.topics.map((t) => [String(t.id), t.name, t.color])], st.topic,
+    (v) => { st.topic = v; filtersChanged(); })) : null;
+  const kindChip = spec.kinds ? chip(() => pickerSheet('Filter by type', [['', 'All types'], ...Object.entries(spec.kinds).map(([k, v]) => [k, v.label])], st.kind,
+    (v) => { st.kind = v; filtersChanged(); })) : null;
+  const catChip = spec.hasCategory ? chip(() => pickerSheet('Filter by category', [['', 'All categories'], ...[...new Set(items.map((t) => t.category).filter(Boolean))].sort().map((c) => [c, c])], st.category,
+    (v) => { st.category = v; filtersChanged(); })) : null;
+  const statusChips = statuses.map(([k, label]) => { const b = chip(() => { st.status = k; filtersChanged(); }); b.textContent = label; b.dataset.status = k; return b; });
+  const chipsRow = h('div', { class: 'bulk-chips', role: 'group', 'aria-label': 'Filters' }, topicChip, kindChip, catChip, statusChips);
+  const count = h('span', { class: 'bulk-count', role: 'status' });
+  const selAll = h('button', { class: 'linkbtn', onclick: () => { shown().forEach((it) => st.sel.add(it.id)); paint(); } }, 'Select all shown');
+  const selNone = h('button', { class: 'linkbtn', onclick: () => { st.sel.clear(); paint(); } }, 'Clear');
+  const toolbar = h('div', { class: 'bulk-toolbar' }, h('div', { class: 'bulk-top' }, search, selectBtn), chipsRow,
+    h('div', { class: 'bulk-countrow' }, count, h('span', { class: 'grow' }), selAll, selNone));
+
+  // ---- action bar ----
+  const barCount = h('b', {});
+  const ctx = {
+    noun,
+    enable: (v) => ({ label: (v ? spec.on : spec.off).label, run: (ids) => ctx.apply(() => data.updateMany(spec.table, ids, { enabled: v }), `${(v ? spec.on : spec.off).done} ${plural(ids.length, noun)}`) }),
+    remove: (warn) => ({
+      label: 'Delete…', danger: true,
+      run: (ids) => { if (confirm(warn(plural(ids.length, noun)))) return ctx.apply(() => data.removeMany(spec.table, ids), `Deleted ${plural(ids.length, noun)}`); },
+    }),
+    /** Run a bulk change, then leave selection mode and re-render with filters and search intact. */
+    async apply(fn, msg) {
+      bar.classList.add('busy');
+      try { const r = await fn(); if (r?.msg) msg = r.msg; } catch (e) { bar.classList.remove('busy'); paint(); return fail(e); }
+      closeSheet(); st.select = false; st.sel.clear(); toast(msg); rerender();
+    },
+  };
+  const actionBtns = spec.actions(ctx).filter(Boolean).map((a) => {
+    const b = h('button', { class: `btn${a.danger ? ' danger' : ''}`, 'aria-label': `${a.label.replace('…', '')} for selected ${noun[1]}`, onclick: () => a.run([...st.sel], b) }, a.label);
+    return b;
+  });
+  const bar = h('div', { class: 'bulk-bar', role: 'toolbar', 'aria-label': `Actions for selected ${noun[1]}`, hidden: true },
+    h('div', { class: 'bulk-bar-n', 'aria-live': 'polite' }, barCount, ' selected'), h('div', { class: 'bulk-actions' }, actionBtns));
+
+  const list = h('div', { class: 'bulk-list' });
+  body.append(toolbar, list, bar);
+
+  function filtersChanged() { session = {}; paint(); }
+
+  function rowFor(it) {
+    const r = spec.row(it);
+    const common = { ...r, off: it.enabled === false };
+    if (st.select) {
+      const flip = () => { if (st.sel.has(it.id)) st.sel.delete(it.id); else st.sel.add(it.id); paint(true); };
+      return rowEl({ ...common, check: st.sel.has(it.id), label: `Select ${r.title}`, onclick: flip });
+    }
+    return rowEl({
+      ...common, onclick: () => spec.onOpen(it),
+      right: toggle(it.enabled, async (v) => {
+        const prev = it.enabled; it.enabled = v;
+        try { await data.update(spec.table, it.id, { enabled: v }); feed.dirty = true; } catch (e) { it.enabled = prev; fail(e); }
+        paint(true);
+      }),
+    });
+  }
+  // Groups default to topics; a spec can supply its own (Topics groups by category).
+  const groupDefs = () => (spec.groups ? spec.groups(items) : meta.topics.map((t) => ({ id: t.id, name: t.name, color: t.color, test: (x) => x.topic_id === t.id })));
+  const addRowEl = (a) => (!st.select && a && !filterActive() ? rowEl({ title: h('span', { class: 'add-row' }, a.label), onclick: a.onclick }) : null);
+
+  function groupEl(t, rows) {
+    const stored = store.get(collapsedKey, {});
+    // Many groups: start collapsed, but never hide matches while searching or filtering.
+    const collapsed = filterActive() ? !!session[t.id] : (t.id in stored ? !!stored[t.id] : groupDefs().length > 5);
+    const off = rows.filter((x) => x.enabled === false).length;
+    const errs = spec.isError ? rows.filter(spec.isError).length : 0;
+    const summary = [String(rows.length), off ? `${off} off` : null, errs ? `${errs} error${errs === 1 ? '' : 's'}` : null].filter(Boolean).join(' · ');
+    const selected = rows.filter((x) => st.sel.has(x.id)).length;
+    const flip = () => {
+      if (filterActive()) session[t.id] = !collapsed;
+      else store.set(collapsedKey, { ...stored, [t.id]: !collapsed });
+      paint(true);
+    };
+    const setGroup = (on) => () => { rows.forEach((x) => (on ? st.sel.add(x.id) : st.sel.delete(x.id))); paint(true); };
+    const a = spec.addRow?.(t);
+    return h('section', { class: 'grp' },
+      h('div', { class: 'grp-h' },
+        h('button', { class: 'grp-toggle', 'aria-expanded': String(!collapsed), 'aria-label': `${t.name}, ${summary.replace(/ · /g, ', ')}`, onclick: flip },
+          h('span', { class: 'chev', 'aria-hidden': 'true' }), t.color ? h('span', { class: 'dot', style: { '--c': t.color } }) : null,
+          h('span', { class: 'grp-name' }, t.name), h('span', { class: 'grp-sum' }, summary + (st.select && selected ? ` · ${selected} selected` : ''))),
+        st.select && rows.length ? h('span', { class: 'grp-sel' },
+          h('button', { class: 'linkbtn', 'aria-label': `Select all in ${t.name}`, onclick: setGroup(true) }, 'All'),
+          h('button', { class: 'linkbtn', 'aria-label': `Select none in ${t.name}`, onclick: setGroup(false) }, 'None')) : null),
+      collapsed ? null : h('div', { class: 'list' }, rows.map(rowFor), addRowEl(a)));
+  }
+
+  function paint(keepScroll) {
+    const rows = shown();
+    const ids = new Set(rows.map((x) => x.id));
+    for (const id of st.sel) if (!ids.has(id)) st.sel.delete(id); // selection only ever holds what is visible under the filters
+
+    selectBtn.textContent = st.select ? 'Done' : 'Select';
+    selectBtn.classList.toggle('primary', st.select);
+    selectBtn.setAttribute('aria-pressed', String(st.select));
+    selectBtn.setAttribute('aria-label', st.select ? 'Leave selection mode' : `Select ${noun[1]}`);
+    const setChip = (el, label, on) => { if (el) { el.textContent = `${label} ▾`; el.setAttribute('aria-pressed', String(on)); } };
+    setChip(topicChip, st.topic ? topicById(+st.topic).name : 'Topic', !!st.topic);
+    setChip(kindChip, st.kind ? spec.kinds[st.kind]?.label || st.kind : 'Type', !!st.kind);
+    setChip(catChip, st.category || 'Category', !!st.category);
+    statusChips.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.status === st.status)));
+    count.textContent = `${rows.length} of ${items.length} ${noun[1]}`;
+    selAll.hidden = selNone.hidden = !st.select;
+    selAll.disabled = !rows.length || st.sel.size === rows.length;
+    selNone.disabled = !st.sel.size;
+    bar.hidden = !st.select;
+    barCount.textContent = st.sel.size;
+    actionBtns.forEach((b) => { b.disabled = !st.sel.size; });
+
+    const y = keepScroll ? scrollY : null;
+    let content;
+    if (!rows.length && items.length) {
+      content = h('div', { class: 'empty small' }, h('p', {}, `No ${noun[1]} match.`),
+        h('button', { class: 'btn', onclick: () => { Object.assign(st, { q: '', topic: '', kind: '', category: '', status: 'all' }); search.value = ''; filtersChanged(); } }, 'Clear search and filters'));
+    } else if (spec.grouped || spec.groups) {
+      const defs = groupDefs();
+      if (spec.groups && defs.length === 1 && defs[0].flat) content = [h('div', { class: 'list' }, rows.map(rowFor))];
+      else {
+        content = defs.filter((g) => !st.topic || g.id === +st.topic).map((g) => [g, rows.filter(g.test)])
+          .filter(([, r]) => r.length || (!filterActive() && !st.select && !spec.groups)).map(([g, r]) => groupEl(g, r));
+      }
+    } else {
+      content = [h('div', { class: 'list' }, rows.map(rowFor), addRowEl(spec.addRow))];
+    }
+    if (spec.footer && !st.select && !filterActive()) content = [...[content].flat(), h('div', { class: 'list', style: { marginTop: '14px' } }, spec.footer())];
+    list.replaceChildren(...[content].flat());
+    list.classList.toggle('selecting', st.select);
+    if (y != null) scrollTo(0, y);
+  }
+  paint();
+}
 
 const SETTINGS = {
   async topics(body) {
     const topics = await data.topics();
     const total = topics.filter((t) => t.enabled).reduce((s, t) => s + t.weight, 0) || 1;
-    const groups = topicGroups(topics);
-    const categorised = groups.some((g) => g.raw);
-    const rows = (ts) => ts.map((t) => rowEl({
-      dot: t.color, title: t.name,
-      desc: t.enabled ? `${Math.round((t.weight / total) * 100)}% of feed · ${Math.round(t.curated_ratio * 100)}% articles when available` : 'Hidden',
-      right: toggle(t.enabled, async (v) => { await data.update('topics', t.id, { enabled: v }).catch(fail); rerender(); }),
-      onclick: () => editTopic(t),
-    }));
-    body.append(
-      h('p', { class: 'intro' }, topics.length ? 'Topics are the channels in your feed. Set how much each one gets in Balance, and group them with a category so the feed\'s topic picker stays tidy.' : 'Topics are the channels in your feed. Start from a starter pack or add your own.'),
-      ...(categorised ? groups.flatMap((g) => [h('div', { class: 'section-h' }, g.name), h('div', { class: 'list' }, rows(g.topics))]) : [h('div', { class: 'list' }, rows(topics))]),
-      h('div', { class: 'list', style: { marginTop: '14px' } },
+    const hasCategory = true;
+    body.append(h('p', { class: 'intro' }, topics.length ? 'Topics are the channels in your feed. Set how much each one gets in Balance, and group them with a category so the feed\'s topic picker stays tidy.' : 'Topics are the channels in your feed. Start from a starter pack or add your own.'));
+    manage(body, {
+      tab: 'topics', noun: ['topic', 'topics'], items: topics, hasCategory,
+      // Grouped by category, like the feed's topic picker; with no categories at all it is one flat list.
+      groups: (all) => topicGroups(all).map((g) => ({ id: g.raw || '__other', name: g.name, flat: !g.raw, test: (x) => (x.category || '').trim() === g.raw })),
+      search: (t) => `${t.name} ${t.category || ''}`,
+      statuses: [['on', 'Shown', (t) => t.enabled], ['off', 'Hidden', (t) => !t.enabled]],
+      row: (t) => ({
+        dot: t.color, title: t.name,
+        desc: t.enabled ? `${Math.round((t.weight / total) * 100)}% of feed · ${Math.round(t.curated_ratio * 100)}% articles when available` : 'Hidden',
+      }),
+      table: 'topics', onOpen: editTopic,
+      footer: () => [
         rowEl({ title: h('span', { class: 'add-row' }, '+ Add topic'), onclick: () => editTopic(null) }),
-        rowEl({ title: h('span', { class: 'add-row' }, '+ Add starter pack'), desc: 'Ready-made topics with sources and card types', onclick: openPackPicker })),
-    );
+        rowEl({ title: h('span', { class: 'add-row' }, '+ Add starter pack'), desc: 'Ready-made topics with sources and card types', onclick: openPackPicker }),
+      ],
+      on: { label: 'Show', done: 'Showing' }, off: { label: 'Hide', done: 'Hid' },
+      actions: (ctx) => [
+        ctx.enable(true), ctx.enable(false),
+        {
+          label: 'Set category…', run: (ids) => {
+            const cats = [...new Set(topics.map((t) => (t.category || '').trim()).filter(Boolean))].sort();
+            const input = h('input', { type: 'text', list: 'bulk-categories', placeholder: 'e.g. Learning', autocomplete: 'off' });
+            openSheet('Set category', h('div', {},
+              field(`Category for ${plural(ids.length, ctx.noun)}`, input, 'Leave empty to clear the category.'),
+              h('datalist', { id: 'bulk-categories' }, cats.map((c) => h('option', { value: c }))),
+              h('button', { class: 'btn primary', onclick: () => ctx.apply(() => data.updateMany('topics', ids, { category: input.value.trim() }), `Updated ${plural(ids.length, ctx.noun)}`) }, 'Apply')));
+            input.focus();
+          },
+        },
+        ctx.remove((n) => `Delete ${n}? This also deletes all their sources and card types.`),
+      ],
+    });
   },
   async balance(body) {
     const topics = (await data.topics()).filter((t) => t.enabled);
@@ -747,19 +955,54 @@ const SETTINGS = {
   async sources(body) {
     const sources = await data.sourceStats();
     body.append(h('p', { class: 'intro' }, 'Where articles come from. Strict sources and score thresholds keep the feed useful.'));
-    for (const t of meta.topics) {
-      const mine = sources.filter((s) => s.topic_id === t.id);
-      body.append(h('div', { class: 'section-h' }, h('span', { class: 'dot', style: { '--c': t.color } }), t.name),
-        h('div', { class: 'list' },
-          mine.map((s) => rowEl({
-            title: s.name,
-            desc: s.last_error ? `Error: ${s.last_error}` : `${meta.source_kinds[s.kind]?.label || s.kind} · ${s.unseen_count} unread${s.last_fetched ? ` · fetched ${ago(s.last_fetched)} ago` : ' · not fetched yet'}`,
-            err: !!s.last_error,
-            right: toggle(s.enabled, async (v) => { await data.update('sources', s.id, { enabled: v }).catch(fail); feed.dirty = true; }),
-            onclick: () => editSource(s),
-          })),
-          rowEl({ title: h('span', { class: 'add-row' }, '+ Add source'), onclick: () => editSource({ topic_id: t.id, kind: 'rss', config: {}, weight: 1, enabled: true }) })));
-    }
+    manage(body, {
+      tab: 'sources', noun: ['source', 'sources'], items: sources, grouped: true, kinds: meta.source_kinds,
+      search: (s) => `${s.name} ${s.config?.url || ''} ${s.include || ''}`,
+      isError: (s) => !!s.last_error,
+      statuses: [
+        ['on', 'On', (s) => s.enabled], ['off', 'Off', (s) => !s.enabled], ['errors', 'Errors', (s) => !!s.last_error],
+        ['read', 'No unread', (s) => !s.unseen_count], ['never', 'Never fetched', (s) => !s.last_fetched],
+      ],
+      row: (s) => ({
+        title: s.name,
+        desc: s.last_error ? `Error: ${s.last_error}` : `${meta.source_kinds[s.kind]?.label || s.kind} · ${s.unseen_count} unread${s.last_fetched ? ` · fetched ${ago(s.last_fetched)} ago` : ' · not fetched yet'}`,
+        err: !!s.last_error,
+      }),
+      table: 'sources', onOpen: editSource,
+      addRow: (t) => ({ label: '+ Add source', onclick: () => editSource({ topic_id: t.id, kind: 'rss', config: {}, weight: 1, enabled: true }) }),
+      on: { label: 'Turn on', done: 'Turned on' }, off: { label: 'Turn off', done: 'Turned off' },
+      actions: (ctx) => [
+        ctx.enable(true), ctx.enable(false),
+        {
+          label: 'Move to topic…', run: (ids) => pickerSheet(`Move ${plural(ids.length, ctx.noun)} to`, meta.topics.map((t) => [t.id, t.name, t.color]), null,
+            (topicId) => ctx.apply(() => data.updateMany('sources', ids, { topic_id: topicId }), `Moved ${plural(ids.length, ctx.noun)} to ${topicById(topicId).name}`)),
+        },
+        {
+          label: 'Weight…', run: (ids) => {
+            const input = h('input', { type: 'number', step: 0.1, min: 0, inputmode: 'decimal', value: 1 });
+            openSheet('Set weight', h('div', {},
+              field(`Weight for ${plural(ids.length, ctx.noun)}`, input, '1 = normal. Higher ranks these sources above others.'),
+              h('button', { class: 'btn primary', onclick: () => { const w = Number(input.value); return w > 0 ? ctx.apply(() => data.updateMany('sources', ids, { weight: w }), `Set weight to ${w} on ${plural(ids.length, ctx.noun)}`) : toast('Enter a weight above 0'); } }, 'Apply')));
+            input.focus(); input.select();
+          },
+        },
+        {
+          label: 'Fetch now', run: (ids, btn) => ctx.apply(async () => {
+            let added = 0, failed = 0, done = 0, next = 0;
+            const worker = async () => {
+              while (next < ids.length) {
+                const id = ids[next++];
+                try { const r = await data.fetcher('fetch_source', { id }); if (r.error) failed++; else added += r.added || 0; } catch { failed++; }
+                btn.textContent = `Fetching ${++done}/${ids.length}…`;
+              }
+            };
+            await Promise.all(Array.from({ length: Math.min(3, ids.length) }, worker));
+            return { msg: `${added} new article${added === 1 ? '' : 's'} from ${plural(ids.length, ctx.noun)}${failed ? ` · ${failed} failed` : ''}` };
+          }),
+        },
+        ctx.remove((n) => `Delete ${n} and all their articles (including saved ones)?`),
+      ],
+    });
     const fetchBtn = h('button', {
       class: 'btn',
       onclick: async () => {
@@ -776,17 +1019,16 @@ const SETTINGS = {
   async cards(body) {
     const gens = await data.generators();
     body.append(h('p', { class: 'intro' }, 'Practice cards made from code and your own decks and lists. They keep the feed going when articles run out.'));
-    for (const t of meta.topics) {
-      const mine = gens.filter((g) => g.topic_id === t.id);
-      body.append(h('div', { class: 'section-h' }, h('span', { class: 'dot', style: { '--c': t.color } }), t.name),
-        h('div', { class: 'list' },
-          mine.map((g) => rowEl({
-            title: g.name, desc: `${meta.generator_kinds[g.kind]?.label || g.kind} · weight ${(+g.weight).toFixed(1)}`,
-            right: toggle(g.enabled, async (v) => { await data.update('generators', g.id, { enabled: v }).catch(fail); feed.dirty = true; }),
-            onclick: () => editGenerator(g),
-          })),
-          rowEl({ title: h('span', { class: 'add-row' }, '+ Add card type'), onclick: () => editGenerator({ topic_id: t.id, kind: 'prompts', config: {}, weight: 1, enabled: true }) })));
-    }
+    manage(body, {
+      tab: 'cards', noun: ['card type', 'card types'], items: gens, grouped: true, kinds: meta.generator_kinds,
+      search: (g) => `${g.name} ${meta.generator_kinds[g.kind]?.label || g.kind}`,
+      statuses: [['on', 'On', (g) => g.enabled], ['off', 'Off', (g) => !g.enabled]],
+      row: (g) => ({ title: g.name, desc: `${meta.generator_kinds[g.kind]?.label || g.kind} · weight ${(+g.weight).toFixed(1)}` }),
+      table: 'generators', onOpen: editGenerator,
+      addRow: (t) => ({ label: '+ Add card type', onclick: () => editGenerator({ topic_id: t.id, kind: 'prompts', config: {}, weight: 1, enabled: true }) }),
+      on: { label: 'Turn on', done: 'Turned on' }, off: { label: 'Turn off', done: 'Turned off' },
+      actions: (ctx) => [ctx.enable(true), ctx.enable(false), ctx.remove((n) => `Delete ${n}?`)],
+    });
   },
   async decks(body) {
     const decks = await data.deckStats();
