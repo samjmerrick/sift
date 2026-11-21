@@ -145,14 +145,39 @@ const assert = (cond, msg) => { if (!cond) throw new Error(`FAILED: ${msg}`); co
   assert(titles.indexOf('Chess') === 4, 'new topic is added at the end');
 
   await p.click('.seg button:has-text("Cards")');
-  await p.waitForSelector('.section-h:has-text("Chess")');
-  await p.click('.section-h:has-text("Chess") + .list >> text=+ Add card type');
+  await p.waitForSelector('.grp-name:text-is("Chess")');
+  await p.click('.grp:has(.grp-name:text-is("Chess")) >> text=+ Add card type');
   await p.selectOption('.sheet select >> nth=0', 'prompts');
   await p.fill('.sheet textarea', 'Learn the Italian opening\nDo 5 tactics puzzles');
   await p.click('.sheet .btn.primary');
   await p.waitForTimeout(500);
   const [gen] = await sql`select g.* from generators g join topics t on t.id = g.topic_id where t.name = 'Chess'`;
   assert(gen?.config?.lines?.includes('Italian'), 'card type created with its config');
+
+  console.log('bulk management');
+  await p.click('.seg button:has-text("Sources")');
+  await p.waitForSelector('.intro:has-text("Where articles")');
+  await p.waitForSelector('.bulk-toolbar');
+  await p.fill('.bulk-search', 'hacker');
+  const hackerIds = (await sql`select id from sources where name ilike '%hacker%'`).map((r) => r.id);
+  await p.waitForFunction((n) => document.querySelector('.bulk-count')?.textContent.startsWith(n + ' of'), hackerIds.length);
+  assert(true, 'search narrows the source list');
+  await p.click('.bulk-select');
+  await p.click('text=Select all shown');
+  assert((await p.textContent('.bulk-bar-n')).startsWith(`${hackerIds.length} selected`), 'select all shown selects the matches');
+  await shot('bulk-select');
+  await p.click('.bulk-actions >> text=Turn off');
+  await p.waitForSelector('.toast.show:has-text("Turned off")');
+  await p.waitForTimeout(400);
+  const [offN] = await sql`select count(*)::int n from sources where id = any(${hackerIds}) and not enabled`;
+  assert(offN.n === hackerIds.length, 'bulk turn off updates every selected source');
+  assert((await p.inputValue('.bulk-search')) === 'hacker' && !(await p.$('.bulk-bar:not([hidden])')), 'search is kept and selection mode ends after a bulk action');
+  await p.click('.bulk-select');
+  await p.click('text=Select all shown');
+  await p.click('.bulk-actions >> text=Turn on');
+  await p.waitForTimeout(600);
+  const [offAfter] = await sql`select count(*)::int n from sources where id = any(${hackerIds}) and not enabled`;
+  assert(offAfter.n === 0, 'bulk turn on restores them');
 
   await p.click('.seg button:has-text("Decks")');
   await p.waitForSelector('text=+ New deck');
