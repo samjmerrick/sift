@@ -106,3 +106,37 @@ test('topicIds filters to several topics at once', async () => {
   assert.ok(cards.every((c) => ids.includes(c.topic_id)));
   assert.ok(new Set(cards.map((c) => c.topic_id)).size === 2, 'both selected topics appear');
 });
+
+test('notes cards rotate through the sample and skip shown keys', () => {
+  const gen = GENERATOR_KINDS.notes;
+  const sample = [1, 2, 3].map((id) => ({ id, front: `T${id}`, back: `B${id}`, note: id === 2 ? 'extra' : '' }));
+  const decks = { 7: { name: 'Concepts', due: [], new: [], sample } };
+  const seen = new Set();
+  for (let i = 0; i < 3; i++) {
+    const c = gen.generate({ deck_id: 7 }, { decks, excludeKeys: seen });
+    assert.equal(c.kind, 'note');
+    assert.ok(!seen.has(c.key), 'does not repeat an excluded card');
+    assert.deepEqual([c.deck, c.title, c.body], ['Concepts', `T${c.key.slice(5)}`, `B${c.key.slice(5)}`]);
+    seen.add(c.key);
+  }
+  assert.equal(gen.generate({ deck_id: 7 }, { decks, excludeKeys: seen }), null, 'nothing left once all are excluded');
+  assert.equal(gen.generate({ deck_id: 99 }, { decks, excludeKeys: new Set() }), null, 'missing deck gives null');
+  const fallback = { 8: { name: 'N', due: [], new: [sample[0]], sample: [] } };
+  assert.equal(gen.generate({ deck_id: 8 }, { decks: fallback, excludeKeys: new Set() }).key, 'note:1', 'falls back to new cards');
+});
+
+test('feed_state includes a card sample only for decks used by an enabled notes card type', async () => {
+  const [a] = await sql`insert into decks (name) values ('Notes deck') returning id`;
+  const [b] = await sql`insert into decks (name) values ('Plain deck') returning id`;
+  for (const d of [a, b]) await sql`insert into cards ${sql(Array.from({ length: 35 }, (_, i) => ({ deck_id: d.id, front: `f${i}`, back: `b${i}`, position: i })))}`;
+  const [t] = await sql`select id from topics limit 1`;
+  const [g] = await sql`insert into generators (topic_id, kind, name, config) values (${t.id}, 'notes', 'Notes', ${sql.json({ deck_id: a.id })}) returning id`;
+  let state = await loadState();
+  assert.equal(state.decks[a.id].sample.length, 30, 'sample is capped at 30');
+  assert.equal(state.decks[b.id].sample.length, 0);
+  await sql`update generators set enabled = false where id = ${g.id}`;
+  state = await loadState();
+  assert.equal(state.decks[a.id].sample.length, 0, 'disabled notes card type needs no sample');
+  await sql`delete from generators where id = ${g.id}`;
+  await sql`delete from decks where id in ${sql([a.id, b.id])}`;
+});

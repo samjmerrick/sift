@@ -51,10 +51,3 @@ test('flashcard card types point at the installed deck', async () => {
   const [p] = await sql`select config from generators where kind = 'prompts' limit 1`;
   assert.equal(typeof p.config.lines, 'string');
 });
-
-test('packs categorise their topics, and the category is stored', async () => {
-  for (const [file, pack] of packs) for (const t of pack.topics) assert.ok(t.category, `${file}: ${t.name} has a category`);
-  const rows = await sql`select name, category from topics where name in ('Sight reading', 'UK news', 'Reading & Berkshire', 'Cute animals')`;
-  assert.equal(rows.length, 4);
-  assert.ok(rows.every((r) => r.category));
-});

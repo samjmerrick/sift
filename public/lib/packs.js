@@ -28,7 +28,7 @@ export function validatePack(pack) {
     for (const c of t.cards || []) {
       if (!GENERATOR_KINDS[c.kind]) errs.push(`${t.name}: unknown card type "${c.kind}"`);
       if (!c.name) errs.push(`${t.name}: card type needs a name`);
-      if (c.kind === 'flashcards' && !decks.has(c.config?.deck)) errs.push(`${t.name}/${c.name}: deck "${c.config?.deck}" is not defined in the pack`);
+      if ((c.kind === 'flashcards' || c.kind === 'notes') && !decks.has(c.config?.deck)) errs.push(`${t.name}/${c.name}: deck "${c.config?.deck}" is not defined in the pack`);
       if (c.config?.lines != null && !Array.isArray(c.config.lines)) errs.push(`${t.name}/${c.name}: lines must be an array`);
     }
   }
@@ -58,7 +58,7 @@ export async function installPack(data, pack) {
   for (const t of pack.topics) {
     if (existingTopics.has(t.name)) continue;
     const row = await data.insert('topics', {
-      name: t.name, color: t.color || '#64748b', weight: t.weight ?? 2, curated_ratio: t.curated_ratio ?? 0.5, category: t.category || '', position: await data.nextTopicPosition(),
+      name: t.name, color: t.color || '#64748b', weight: t.weight ?? 2, curated_ratio: t.curated_ratio ?? 0.5, position: await data.nextTopicPosition(),
     });
     added.topics++;
     for (const s of t.sources || []) {

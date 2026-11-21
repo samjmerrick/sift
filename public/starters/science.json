@@ -4,7 +4,6 @@
   "topics": [
     {
       "name": "Science",
-      "category": "Science",
       "color": "#059669",
       "weight": 2,
       "curated_ratio": 0.9,

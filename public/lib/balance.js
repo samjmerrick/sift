@@ -26,26 +26,6 @@ export function setShare(shares, locked, index, value) {
   return out;
 }
 
-/** Scale a group of topics (by index) to a combined share; the unlocked topics outside it absorb the difference. */
-export function setGroupShare(shares, locked, members, value) {
-  const inGroup = new Set(members);
-  const free = members.filter((i) => !locked[i]);
-  if (!free.length) return shares.slice();
-  const fixedInGroup = members.filter((i) => locked[i]).reduce((s, i) => s + shares[i], 0);
-  const lockedOutside = shares.reduce((s, v, i) => s + (!inGroup.has(i) && locked[i] ? v : 0), 0);
-  const outsideFree = shares.map((_, i) => i).filter((i) => !inGroup.has(i) && !locked[i]);
-  const room = 100 - lockedOutside - fixedInGroup; // what the unlocked members could hold at most
-  const groupTarget = outsideFree.length ? Math.min(Math.max(0, (Number(value) || 0) - fixedInGroup), room) : room;
-  const out = shares.slice();
-  const spread = (ids, total) => {
-    const cur = ids.reduce((s, i) => s + out[i], 0);
-    for (const i of ids) out[i] = cur > 0 ? (out[i] / cur) * total : total / ids.length;
-  };
-  spread(free, groupTarget);
-  if (outsideFree.length) spread(outsideFree, room - groupTarget);
-  return out;
-}
-
 /** Round shares to whole percentages that still add up to exactly 100 (largest remainder). */
 export function toPercents(shares) {
   const floors = shares.map((s) => Math.floor(s + 1e-9));

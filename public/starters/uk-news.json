@@ -4,7 +4,6 @@
  "topics": [
   {
    "name": "UK news",
-   "category": "News",
    "color": "#334155",
    "weight": 2.5,
    "curated_ratio": 1,
@@ -58,7 +57,6 @@
   },
   {
    "name": "Reading & Berkshire",
-   "category": "News",
    "color": "#0284c7",
    "weight": 2,
    "curated_ratio": 1,

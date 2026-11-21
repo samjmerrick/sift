@@ -75,6 +75,10 @@ export function createData(client) {
       return check(await client.from('source_stats').select('*').order('topic_id').order('id'))
         .map((s) => ({ ...s, last_fetched: ms(s.last_fetched) }));
     },
+    async domainStats() {
+      return check(await client.from('domain_stats').select('*').order('total', { ascending: false }).order('domain'))
+        .map((d) => ({ ...d, last_published: ms(d.last_published) }));
+    },
     async generators() { return check(await client.from('generators').select('*').order('topic_id').order('id')); },
     async deckStats() { return check(await client.from('deck_stats').select('*').order('id')); },
     async deckCards(deckId) {

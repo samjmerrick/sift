@@ -1,6 +1,6 @@
 {
  "name": "Machine learning: news & concepts",
- "description": "ML news from research labs and newsletters, plus a learning topic with a 75-card concept deck, explainer channels and 'explain it' prompts.",
+ "description": "ML news from research labs and newsletters, plus a learning topic with 75 concept notes to read, explainer channels and 'explain it' prompts.",
  "decks": [
   {
    "name": "Machine learning concepts",
@@ -386,7 +386,6 @@
  "topics": [
   {
    "name": "Machine learning",
-   "category": "Tech",
    "color": "#c026d3",
    "weight": 2,
    "curated_ratio": 1,
@@ -484,7 +483,6 @@
   },
   {
    "name": "ML concepts",
-   "category": "Tech",
    "color": "#a21caf",
    "weight": 1.5,
    "curated_ratio": 0.4,
@@ -569,11 +567,10 @@
    ],
    "cards": [
     {
-     "kind": "flashcards",
-     "name": "Concept deck",
+     "kind": "notes",
+     "name": "ML concepts",
      "config": {
-      "deck": "Machine learning concepts",
-      "new_per_day": 5
+      "deck": "Machine learning concepts"
      },
      "weight": 2
     },
