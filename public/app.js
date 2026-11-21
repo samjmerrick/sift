@@ -334,6 +334,7 @@ function renderCard(c, { savedId } = {}) {
   const card = h('article', { class: `card k-${c.kind}`, style: { '--c': t.color } });
   if (c.topic_id != null) card.dataset.topic = c.topic_id;
   if (c.kind === 'article') return renderArticle(c, card);
+  if (c.generator_id != null) card.dataset.generator = c.generator_id;
 
   const body = (GEN_RENDER[c.kind] || ((x) => [h('p', {}, JSON.stringify(x))]))(c);
   let savedCardId = savedId ?? null;
@@ -351,7 +352,8 @@ function renderCard(c, { savedId } = {}) {
       else if (savedCardId) { await data.deleteSavedCard(savedCardId); savedCardId = null; }
     },
   });
-  card.append(metaRow(c, [c.generator]), ...body.filter(Boolean), h('div', { class: 'actions' }, h('span', { class: 'spacer' }), ...btns));
+  card.append(metaRow(c, [generatorButton(c) || c.generator]), ...body.filter(Boolean), h('div', { class: 'actions' }, h('span', { class: 'spacer' }), ...btns,
+    c.generator ? h('button', { class: 'act more', 'aria-label': `More options for ${c.generator}`, onclick: () => openCardTypeSheet(c) }, icon('more')) : null));
   return card;
 }
 
@@ -634,6 +636,7 @@ function tone(midi, t, dur) {
 
 // ---------- changing what the feed shows (⋯ sheet) ----------
 const sourceButton = (c, opts) => (c.source ? h('button', { class: 'src-btn', type: 'button', title: 'Options for this source', onclick: () => openSourceSheet(c, opts) }, c.source) : null);
+const generatorButton = (c) => (c.generator ? h('button', { class: 'src-btn', type: 'button', title: 'Options for this card type', onclick: () => openCardTypeSheet(c) }, c.generator) : null);
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 
 /** Remove rendered feed cards whose data-* attributes match, so hidden things vanish immediately. */
@@ -749,13 +752,16 @@ async function editSourceFor(c) {
   } catch (e) { fail(e); }
 }
 
+const sheetAct = (fn) => () => { closeSheet(); fn(); };
+const sheetRow = (title, desc, onclick) => h('button', { class: 'row row-btn', type: 'button', onclick },
+  h('div', { class: 'grow' }, h('div', { class: 'title' }, title), h('div', { class: 'desc' }, desc)));
+
 /** The ⋯ sheet: hide, rebalance or edit what a card came from. */
 function openSourceSheet(c, { reader = false } = {}) {
   const topic = topicById(c.topic_id);
   const done = () => { if (reader) leaveReader(); };
-  const act = (fn) => () => { closeSheet(); fn(); };
-  const row = (title, desc, onclick) => h('button', { class: 'row row-btn', type: 'button', onclick },
-    h('div', { class: 'grow' }, h('div', { class: 'title' }, title), h('div', { class: 'desc' }, desc)));
+  const act = sheetAct;
+  const row = sheetRow;
   openSheet(c.source || 'This card', h('div', { class: 'list' }, [
     row(`Hide source “${c.source}”`, 'Stop showing articles from it. You can undo this.', act(() => hideSource(c, done))),
     c.domain ? row(`Hide ${c.domain}`, 'Never show links to this site, whichever source they come from.', act(() => hideDomain(c, done))) : null,
@@ -764,6 +770,76 @@ function openSourceSheet(c, { reader = false } = {}) {
     topic.name ? row(`Hide topic “${topic.name}”`, 'Hides the whole topic, including its practice cards.', act(() => hideTopic(c, done))) : null,
     row('Edit source…', 'Name, keywords, weight and more, in Settings.', act(() => editSourceFor(c))),
   ]));
+}
+
+const hideCardType = (c) => {
+  const id = c.generator_id;
+  let removed = null;
+  let at = -1;
+  return hideFromFeed({
+    name: c.generator,
+    persist: () => data.update('generators', id, { enabled: false }),
+    undo: () => data.update('generators', id, { enabled: true }),
+    dropItem: () => false,
+    dropCard: (d) => d.generator === String(id),
+    local: () => {
+      const list = feed.state?.generators;
+      at = list ? list.findIndex((x) => x.id === id) : -1;
+      if (at >= 0) [removed] = list.splice(at, 1);
+    },
+    unlocal: () => { if (removed && feed.state && !feed.state.generators.some((x) => x.id === id)) feed.state.generators.splice(Math.min(at, feed.state.generators.length), 0, removed); },
+  });
+};
+
+async function nudgeCardType(c, factor) {
+  try {
+    const g = (await data.generators()).find((x) => x.id === c.generator_id);
+    if (!g) throw new Error('That card type no longer exists.');
+    const current = g.weight ?? 1;
+    const next = clamp(+(current * factor).toFixed(2), 0.1, 10);
+    if (next === current) return toast(factor < 1 ? 'Already at the lowest weight' : 'Already at the highest weight');
+    const apply = async (w) => {
+      await data.update('generators', g.id, { weight: w });
+      const x = feed.state?.generators.find((y) => y.id === g.id);
+      if (x) x.weight = w;
+    };
+    await apply(next);
+    toast(`${factor < 1 ? 'Less' : 'More'} ${c.generator}`, { label: 'Undo', onClick: () => apply(current).catch(fail) });
+  } catch (e) { fail(e); }
+}
+
+async function editCardTypeFor(c) {
+  try {
+    const g = (await data.generators()).find((x) => x.id === c.generator_id);
+    if (!g) throw new Error('That card type no longer exists.');
+    const target = '#/settings/cards';
+    if (location.hash !== target) {
+      const routed = new Promise((resolve) => window.addEventListener('hashchange', resolve, { once: true }));
+      location.hash = target;
+      await routed;
+    }
+    await loadMeta().catch(() => {});
+    editGenerator(g);
+  } catch (e) { fail(e); }
+}
+
+/** The ⋯ sheet on practice cards: hide, rebalance or edit the card type. */
+async function openCardTypeSheet(c) {
+  const topic = topicById(c.topic_id);
+  const box = h('div', {}, h('p', { class: 'sub' }, 'Loading…'));
+  openSheet(c.generator || 'This card', box);
+  let exists = false;
+  try { exists = (await data.generators()).some((x) => x.id === c.generator_id); } catch { /* treat as gone */ }
+  const topicRow = topic.name ? sheetRow(`Hide topic “${topic.name}”`, 'Hides the whole topic, including its articles.', sheetAct(() => hideTopic(c))) : null;
+  box.replaceChildren(exists
+    ? h('div', { class: 'list' }, [
+      sheetRow(`Hide card type “${c.generator}”`, 'Stop showing these cards. You can undo this.', sheetAct(() => hideCardType(c))),
+      sheetRow('Show less of this card type', 'Lowers its weight, so it appears less often.', sheetAct(() => nudgeCardType(c, 0.6))),
+      sheetRow('Show more of this card type', 'Raises its weight, so it appears more often.', sheetAct(() => nudgeCardType(c, 1.5))),
+      topicRow,
+      sheetRow('Edit card type…', 'Name, topic, weight and more, in Settings.', sheetAct(() => editCardTypeFor(c))),
+    ])
+    : h('div', { class: 'list' }, [h('p', { class: 'sub' }, 'This card type no longer exists.'), topicRow]));
 }
 
 async function openMutedSheet() {
