@@ -1898,7 +1898,53 @@ function onRoute() {
   else renderFeed();
 }
 window.addEventListener('hashchange', onRoute);
-$('#refresh').onclick = () => { flushSeen(); if (route().name !== 'feed') location.hash = '#/'; else { feed.el = null; renderFeed(); } };
+function refreshFeed() { flushSeen(); if (route().name !== 'feed') location.hash = '#/'; else resetFeed(); }
+$('#refresh').onclick = refreshFeed;
+
+// ---------- refresh on return ----------
+// The feed loads once, so a home-screen app resumed hours later would show yesterday's cards. After a long
+// enough absence, rebuild it: right away when the feed is showing, otherwise the next time it is opened.
+const STALE_AFTER = 30 * 60e3;
+let hiddenAt = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') { hiddenAt = Date.now(); return; }
+  if (!hiddenAt || Date.now() - hiddenAt < STALE_AFTER || !feed.el) return;
+  hiddenAt = 0;
+  if (route().name === 'feed' && $('#sheet').hidden) resetFeed();
+  else feed.dirty = true;
+});
+
+// ---------- pull to refresh ----------
+const ptr = h('div', { class: 'ptr', 'aria-hidden': 'true', html: '<svg viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>' });
+document.body.append(ptr);
+const PTR_ARM = 64;
+let ptrStart = null, ptrPull = 0;
+function drawPtr(pull) {
+  ptrPull = pull;
+  ptr.style.top = `${$('.topbar').getBoundingClientRect().bottom}px`;
+  ptr.style.transform = `translate(-50%, ${pull - 40}px) rotate(${pull * 4}deg)`;
+  ptr.style.opacity = String(Math.min(1, pull / PTR_ARM));
+  ptr.toggleAttribute('data-armed', pull >= PTR_ARM);
+  ptr.toggleAttribute('data-pulling', pull > 0);
+}
+document.addEventListener('touchstart', (e) => {
+  ptrStart = e.touches.length === 1 && scrollY <= 0 && route().name === 'feed' && $('#sheet').hidden ? e.touches[0].clientY : null;
+}, { passive: true });
+document.addEventListener('touchmove', (e) => {
+  if (ptrStart === null) return;
+  const dy = e.touches[0].clientY - ptrStart;
+  if (scrollY > 0 && dy <= 0) { ptrStart = null; drawPtr(0); return; }
+  drawPtr(Math.max(0, Math.min(100, dy * 0.5)));
+}, { passive: true });
+const endPtr = () => {
+  if (ptrStart === null) return;
+  ptrStart = null;
+  const armed = ptrPull >= PTR_ARM;
+  drawPtr(0);
+  if (armed) refreshFeed();
+};
+document.addEventListener('touchend', endPtr);
+document.addEventListener('touchcancel', () => { ptrStart = null; drawPtr(0); });
 
 (async function init() {
   if (!data) return showSetup();

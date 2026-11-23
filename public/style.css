@@ -47,6 +47,15 @@ svg { stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linecap: round
 }
 .topbar-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; max-width: 680px; margin: 0 auto; }
 .topbar-actions { display: flex; gap: 2px; }
+/* pull to refresh: drawn by app.js under the top bar while the feed is dragged down from the top */
+.ptr {
+  position: fixed; left: 50%; z-index: 9; width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center;
+  background: var(--surface); color: var(--ink-3); box-shadow: var(--shadow); border: 1px solid var(--line);
+  opacity: 0; pointer-events: none; transform: translate(-50%, -40px); transition: transform .2s, opacity .2s;
+}
+.ptr[data-pulling] { transition: none; }
+.ptr[data-armed] { color: var(--accent); }
+.ptr svg { width: 20px; height: 20px; }
 .icon-btn { position: relative; }
 .icon-btn[data-on]::after { content: ""; position: absolute; top: 7px; right: 7px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); border: 2px solid var(--bg); }
 .wordmark { font: 600 22px/1 var(--serif); letter-spacing: -.01em; margin: 0; }
