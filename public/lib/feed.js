@@ -9,7 +9,7 @@ export function normaliseState(raw) {
   const decks = {};
   for (const [id, d] of Object.entries(raw.decks || {})) {
     const cards = (list) => list.map((c) => ({ ...c, due: ms(c.due), introduced_at: ms(c.introduced_at) }));
-    decks[Number(id)] = { name: d.name, introduced_today: d.introduced_today, due: cards(d.due), new: cards(d.new), sample: cards(d.sample || []) };
+    decks[Number(id)] = { name: d.name, lang: d.lang || '', introduced_today: d.introduced_today, due: cards(d.due), new: cards(d.new), sample: cards(d.sample || []) };
   }
   return {
     topics: raw.topics || [],
