@@ -8,6 +8,7 @@ import { STAFF, keySigSteps } from './lib/theory.js';
 import { sharesFromWeights, toPercents, rankWeights, rankOrder, FALLOFFS, DEFAULT_FALLOFF } from './lib/balance.js';
 import { rebalance, saveRank } from './lib/rank.js';
 import { sanitiseHtml } from './lib/sanitise.js';
+import { createOffline, idbBackend, memoryBackend, missingArticles } from './lib/offline.js';
 
 // ---------- utilities ----------
 const $ = (sel, el = document) => el.querySelector(sel);
@@ -101,6 +102,10 @@ let meta = { topics: [], source_kinds: {}, generator_kinds: {}, decks: [] };
 const topicById = (id) => meta.topics.find((t) => t.id === id) || { name: '', color: '#888' };
 async function loadMeta() {
   const [topics, decks] = await Promise.all([data.topics(), data.deckStats()]);
+  offline.setMeta({ topics, decks });
+  setMeta(topics, decks);
+}
+function setMeta(topics, decks) {
   meta = {
     topics, decks, source_kinds: SOURCE_KINDS,
     generator_kinds: Object.fromEntries(Object.entries(GENERATOR_KINDS).map(([k, v]) => [k, { label: v.label, description: v.description, fields: v.fields }])),
@@ -393,7 +398,7 @@ function renderArticle(c, card) {
   const btns = reactionButtons(c, {
     initialReaction: c.reaction, initialSaved: c.saved,
     onReact: async (r) => { await data.reactItem(c.item_id, r); c.reaction = r; },
-    onSave: async (s) => { await data.saveItem(c.item_id, s); c.saved = s; },
+    onSave: async (s) => { await data.saveItem(c.item_id, s); c.saved = s; keepOffline(c, s); },
   });
   articleData.set(c.item_id, c);
   card.dataset.item = c.item_id;
@@ -898,8 +903,52 @@ function youtubeId(url) {
 const rowToCard = (r) => ({
   key: `item:${r.id}`, kind: 'article', item_id: r.id, topic_id: r.topic_id, source_id: r.source_id, title: r.title, summary: (r.summary || '').trim(),
   url: r.url, domain: r.domain, image: r.image, source: r.source_name, comments_url: r.comments_url, score: r.community_score, comments: r.comment_count,
-  published_at: r.published_at, reaction: r.reaction, saved: !!r.saved_at,
+  published_at: r.published_at, reaction: r.reaction, saved: !!r.saved_at, saved_at: r.saved_at,
 });
+const cardToRow = (c) => ({
+  id: c.item_id, topic_id: c.topic_id, source_id: c.source_id, title: c.title, summary: c.summary, url: c.url, domain: c.domain, image: c.image,
+  source_name: c.source, comments_url: c.comments_url, community_score: c.score, comment_count: c.comments, published_at: c.published_at,
+  reaction: c.reaction, saved_at: c.saved_at ?? Date.now(),
+});
+
+// ---------- offline copies of saved articles ----------
+// Saving an article also stores its text on this device (lib/offline.js), so Saved and the reader work offline.
+const offline = createOffline(typeof indexedDB !== 'undefined' ? idbBackend() : memoryBackend());
+/** Run a Supabase call that has an offline fallback. Offline (or with an expired token that can't refresh), supabase-js
+ *  waits on its auth retries for a long time, so fail at once when the device says it's offline, and after `ms` otherwise. */
+const net = (fn, ms = 8000) => (navigator.onLine === false ? Promise.reject(new Error("You're offline."))
+  : Promise.race([fn(), new Promise((_, reject) => setTimeout(() => reject(new Error("Couldn't reach the server.")), ms))]));
+
+/** Fetch the readable text and store it with the article's card data (YouTube has no text: card only). */
+async function storeArticle(row) {
+  let read = null;
+  if (!youtubeId(row.url)) {
+    try { read = readCache.get(row.id) || (await data.fetcher('read', { id: row.id })); } catch { read = null; }
+    if (read?.status === 'ok') readCache.set(row.id, read); else read = null;
+  }
+  await offline.saveArticle(row.id, row, read);
+}
+
+/** Keep the device copy in step when an article is saved or unsaved. Never throws. */
+async function keepOffline(c, saved) {
+  if (saved) { await storeArticle(cardToRow(c)); return; }
+  await offline.removeArticle(c.item_id);
+  const list = await offline.savedList();
+  if (list) await offline.setSavedList({ ...list, items: list.items.filter((i) => i.id !== c.item_id) });
+}
+
+let backfilling = false;
+/** Store copies of saved articles that don't have one yet (saved before this existed, or on another device). */
+async function backfillOffline(items) {
+  if (backfilling) return;
+  backfilling = true;
+  try {
+    for (const row of missingArticles(items, await offline.articleIds())) {
+      if (navigator.onLine === false) break;
+      await storeArticle(row);
+    }
+  } finally { backfilling = false; }
+}
 
 /** Keep the (hidden) feed card's buttons in step with a reaction made in the reader. */
 function syncFeedCard(c) {
@@ -957,7 +1006,11 @@ async function renderReader(id) {
   if (!c) {
     page.replaceChildren(readerBar(null, page), h('div', { class: 'reader-article' }, readerSkeleton()));
     try {
-      const row = await data.item(id);
+      let row;
+      try { row = await net(() => data.item(id)); } catch (e) {
+        row = (await offline.article(id))?.card; // offline: use the copy stored when it was saved
+        if (!row) throw e;
+      }
       if (!alive()) return;
       if (!row) throw new Error("That article doesn't exist any more.");
       c = rowToCard(row);
@@ -977,7 +1030,7 @@ async function renderReader(id) {
   const btns = reactionButtons(c, {
     initialReaction: c.reaction, initialSaved: c.saved,
     onReact: async (r) => { await data.reactItem(id, r); c.reaction = r; syncFeedCard(c); },
-    onSave: async (s) => { await data.saveItem(id, s); c.saved = s; syncFeedCard(c); },
+    onSave: async (s) => { await data.saveItem(id, s); c.saved = s; syncFeedCard(c); keepOffline(c, s); },
   });
   page.replaceChildren(
     readerBar(c, page),
@@ -1007,13 +1060,15 @@ async function renderReader(id) {
     }
     body.replaceChildren(readerSkeleton());
     try {
-      let res = readCache.get(id);
+      let res = readCache.get(id) || (c.saved ? (await offline.article(id))?.read : null);
+      const fresh = !res;
       if (!res) res = await data.fetcher('read', { id });
       if (!alive()) return;
       if (res?.status !== 'ok') throw new Error(res?.error || 'the page could not be read');
       const frag = sanitiseHtml(res.html || '');
       if (!frag.textContent.trim() && !frag.querySelector('img')) throw new Error('no readable text was found on the page');
       readCache.set(id, res);
+      if (fresh && c.saved) offline.saveArticle(id, cardToRow(c), res);
       const lead = safeUrl(res.lead_image);
       const hasLead = lead && [...frag.querySelectorAll('img')].some((i) => i.getAttribute('src') === lead);
       body.replaceChildren(...[
@@ -1032,15 +1087,28 @@ async function renderReader(id) {
 // ---------- saved ----------
 async function renderSaved() {
   view.replaceChildren(h('div', { class: 'skeleton' }));
+  let items, cards, note = null;
   try {
-    const { items, cards } = await data.saved();
-    const all = [
-      ...items.map((r) => ({ at: r.saved_at, el: renderCard({ key: `item:${r.id}`, kind: 'article', item_id: r.id, topic_id: r.topic_id, title: r.title, summary: (r.summary || '').trim(), url: r.url, domain: r.domain, image: r.image, source: r.source_name, source_id: r.source_id, comments_url: r.comments_url, score: r.community_score, comments: r.comment_count, published_at: r.published_at, reaction: r.reaction, saved: true }) })),
-      ...cards.map((c) => ({ at: c.saved_at, el: renderCard({ ...c.payload, topic_id: c.topic_id ?? c.payload.topic_id }, { savedId: c.id }) })),
-    ].sort((a, b) => b.at - a.at);
-    view.replaceChildren(all.length ? h('div', { class: 'feed saved-list' }, all.map((x) => x.el))
-      : h('div', { class: 'empty' }, h('h3', {}, 'Nothing saved yet'), h('p', {}, 'Tap the bookmark on any card to keep it here.')));
-  } catch (e) { view.replaceChildren(h('p', { class: 'status' }, e.message)); }
+    ({ items, cards } = await net(() => data.saved()));
+    offline.setSavedList({ items, cards }).then(() => backfillOffline(items));
+  } catch (e) {
+    // Offline (or Supabase unreachable): show the list and article copies stored on this device.
+    const list = await offline.savedList();
+    const stored = await Promise.all((await offline.articleIds()).map((id) => offline.article(id)));
+    if (!list && !stored.some(Boolean)) { if (route().name === 'saved') view.replaceChildren(h('p', { class: 'status' }, e.message)); return; }
+    items = list?.items || [];
+    const listed = new Set(items.map((i) => i.id));
+    items = [...items, ...stored.filter((a) => a?.card && !listed.has(a.card.id)).map((a) => a.card)];
+    cards = list?.cards || [];
+    note = h('p', { class: 'status offline-note', role: 'status' }, "You're offline. Showing what's saved on this device.");
+  }
+  if (route().name !== 'saved') return;
+  const all = [
+    ...items.map((r) => ({ at: r.saved_at, el: renderCard({ ...rowToCard(r), saved: true }) })),
+    ...cards.map((c) => ({ at: c.saved_at, el: renderCard({ ...c.payload, topic_id: c.topic_id ?? c.payload.topic_id }, { savedId: c.id }) })),
+  ].sort((a, b) => b.at - a.at);
+  view.replaceChildren(...[note, all.length ? h('div', { class: 'feed saved-list' }, all.map((x) => x.el))
+    : h('div', { class: 'empty' }, h('h3', {}, 'Nothing saved yet'), h('p', {}, 'Tap the bookmark on any card to keep it here.'))].filter(Boolean));
 }
 
 // ---------- settings ----------
@@ -1064,7 +1132,7 @@ async function renderSettings(tab = 'topics') {
   const seg = h('div', { class: 'seg', role: 'tablist' }, TABS.map(([k, label]) => h('button', { 'aria-pressed': String(k === tab), onclick: () => { location.hash = `#/settings/${k}`; } }, label)));
   const body = h('div');
   const footer = h('div', { class: 'toolbar', style: { justifyContent: 'center', marginTop: '32px' } },
-    h('button', { class: 'btn', onclick: async () => { await data.signOut(); location.reload(); } }, 'Sign out'));
+    h('button', { class: 'btn', onclick: async () => { await data.signOut(); await offline.clear(); location.reload(); } }, 'Sign out'));
   view.replaceChildren(seg, body, footer);
   try { await SETTINGS[tab](body); } catch (e) { body.replaceChildren(h('p', { class: 'status' }, e.message)); }
 }
@@ -1880,9 +1948,16 @@ document.addEventListener('touchcancel', () => { ptrStart = null; drawPtr(0); })
 
 (async function init() {
   if (!data) return showSetup();
-  const timeout = new Promise((resolve) => setTimeout(() => resolve(null), 5000));
-  if (!(await Promise.race([data.session().catch(() => null), timeout]))) return showLogin();
-  try { await loadMeta(); } catch (e) { view.replaceChildren(h('p', { class: 'status' }, `Couldn't connect: ${e.message}`)); return; }
+  const auth = await net(() => data.session(), 5000).then((s) => (s ? 'in' : 'out'), () => 'unreachable');
+  // Signed out, or Supabase can't be reached (offline, or an expired token that can't be refreshed) and nothing is
+  // stored on this device: sign in. Otherwise carry on and let Saved and the reader use the device copies.
+  if (auth === 'out' || (auth === 'unreachable' && navigator.onLine !== false && !(await offline.meta()))) return showLogin();
+  try { await net(loadMeta); } catch (e) {
+    // Offline: carry on with the topics stored last time, so Saved and the reader still work.
+    const cached = await offline.meta();
+    if (!cached) { view.replaceChildren(h('p', { class: 'status' }, `Couldn't connect: ${e.message}`)); return; }
+    setMeta(cached.topics, cached.decks);
+  }
   onRoute();
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 })();
