@@ -83,7 +83,7 @@ A pack is one JSON file in `public/starters/`. Add its filename to `public/start
 {
   "name": "Chess",
   "description": "Shown in the picker.",
-  "decks": [                                   // optional flashcard decks
+  "decks": [                                   // optional flashcard decks; optional "lang" is the fronts' language, e.g. "ru"
     { "name": "Openings", "cards": [["e4 e5 Nf3 Nc6 Bc4", "Italian Game", "optional note"]] }
   ],
   "topics": [{

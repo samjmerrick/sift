@@ -93,6 +93,7 @@ const ICON = {
   arrowdown: '<svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6"/></svg>',
   more: '<svg viewBox="0 0 24 24"><circle cx="5.5" cy="12" r="1.2"/><circle cx="12" cy="12" r="1.2"/><circle cx="18.5" cy="12" r="1.2"/></svg>',
   back: '<svg viewBox="0 0 24 24"><path d="M15 5l-7 7 7 7"/></svg>',
+  share: '<svg viewBox="0 0 24 24"><path d="M12 15V4M8 8l4-4 4 4M5 12v7a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-7"/></svg>',
 };
 const icon = (name) => h('span', { html: ICON[name], style: { display: 'contents' } });
 
@@ -435,6 +436,8 @@ function revealable(label, renderAnswer) {
 
 const GEN_RENDER = {
   flashcard(c) {
+    // The deck's language tags whichever side is in it. Cards saved before decks had a language look it up.
+    const lang = (c.lang ?? meta.decks.find((d) => d.id === c.deck_id)?.lang) || null;
     const statusLabel = { new: 'New', review: 'Review', relearn: 'Relearn' }[c.status] || '';
     const area = h('div');
     const grade = async (g) => {
@@ -452,14 +455,14 @@ const GEN_RENDER = {
     area.append(h('button', {
       class: 'reveal',
       onclick: () => area.replaceChildren(
-        h('div', { class: 'answer' }, h('div', { class: 'a-main' }, c.back), c.note ? h('div', { class: 'a-note' }, c.note) : null),
+        h('div', { class: 'answer' }, h('div', { class: 'a-main', lang: c.reverse ? lang : null }, c.back), c.note ? h('div', { class: 'a-note' }, c.note) : null),
         h('div', { class: 'grade' },
           h('button', { class: 'again', onclick: () => grade('again') }, 'Again', h('small', {}, '< 10 min')),
           h('button', { class: 'good', onclick: () => grade('good') }, 'Good', h('small', {}, 'got it')),
           h('button', { onclick: () => grade('easy') }, 'Easy', h('small', {}, 'too easy'))),
       ),
     }, 'Show answer'));
-    return [h('div', { class: 'label', style: { marginTop: '8px' } }, statusLabel), h('div', { class: 'big', lang: 'ru' }, c.front), area];
+    return [h('div', { class: 'label', style: { marginTop: '8px' } }, statusLabel), h('div', { class: 'big', lang: c.reverse ? null : lang }, c.front), area];
   },
   guitar_chord(c) {
     const answer = () => [h('div', { class: 'diagram', html: chordSvg(c.frets) }), h('div', { class: 'a-note' }, `${c.notes} · ${c.shape === 'open' ? 'open position' : c.shape}`)];
@@ -497,7 +500,7 @@ const GEN_RENDER = {
       })];
   },
   note(c) {
-    return [h('h3', { class: 'note-title' }, c.title), h('p', { class: 'note-body' }, c.body), c.note ? h('p', { class: 'note-extra' }, c.note) : null];
+    return [h('h3', { class: 'note-title', lang: c.lang || null }, c.title), h('p', { class: 'note-body' }, c.body), c.note ? h('p', { class: 'note-extra' }, c.note) : null];
   },
   prompt(c) {
     return [h('div', { class: 'label', style: { marginTop: '8px' } }, c.label), h('p', { class: 'prompt-text' }, c.text)];
@@ -959,6 +962,18 @@ function syncFeedCard(c) {
 const openOriginal = (c, { primary = false, label = 'Open original' } = {}) => (safeUrl(c.url)
   ? h('a', { class: `btn${primary ? ' primary' : ''}`, href: c.url, target: '_blank', rel: 'noopener noreferrer' }, icon('ext'), label) : null);
 
+/** Share an article's original link: the system share sheet where there is one, else copy the link. */
+async function shareArticle(c) {
+  const url = safeUrl(c.url);
+  if (!url) return;
+  if (navigator.share) {
+    try { await navigator.share({ title: c.title || undefined, url }); return; } catch (e) {
+      if (e.name === 'AbortError') return; // the person closed the share sheet
+    }
+  }
+  try { await navigator.clipboard.writeText(url); toast('Link copied'); } catch { prompt('Copy this link', url); }
+}
+
 const readerSkeleton = () => h('div', { class: 'reader-skel', 'aria-label': 'Loading article', role: 'status' },
   [92, 100, 97, 64, 0, 100, 95, 99, 78, 0, 98, 100, 52].map((w) => (w ? h('div', { class: 'skel-line', style: { width: `${w}%` } }) : h('div', { class: 'skel-gap' }))));
 
@@ -974,10 +989,11 @@ function readerBar(c, page) {
   };
   apply();
   const ext = c && safeUrl(c.url) ? h('a', { class: 'icon-btn', href: c.url, target: '_blank', rel: 'noopener noreferrer', 'aria-label': 'Open original in a new tab', title: 'Open original' }, icon('ext')) : null;
+  const share = c && safeUrl(c.url) ? h('button', { class: 'icon-btn', 'aria-label': 'Share', title: 'Share', onclick: () => shareArticle(c) }, icon('share')) : null;
   const more = c && c.source_id != null ? h('button', { class: 'icon-btn', 'aria-label': `More options for ${c.source}`, title: 'More options', onclick: () => openSourceSheet(c, { reader: true }) }, icon('more')) : null;
   return h('div', { class: 'reader-bar' },
     h('button', { class: 'reader-back', onclick: leaveReader, 'aria-label': 'Back to the feed' }, icon('back'), h('span', {}, 'Back')),
-    h('span', { class: 'spacer' }), dec, inc, ext, more);
+    h('span', { class: 'spacer' }), dec, inc, share, ext, more);
 }
 
 async function renderReader(id) {
@@ -1810,19 +1826,24 @@ function editGenerator(g) {
 /** `opts` is set when opened from a card type editor: onDone(deckId | null) after a save or delete, onBack() to return unchanged. */
 async function editDeck(d, opts = {}) {
   const name = h('input', { type: 'text', value: d?.name || '', placeholder: 'e.g. Russian verbs of motion' });
+  const lang = h('input', { type: 'text', value: d?.lang || '', placeholder: 'e.g. ru', autocapitalize: 'off', spellcheck: 'false', maxlength: 35 });
   const csv = h('textarea', { rows: 8, placeholder: 'front, back, note\nидти́, to go (on foot), Я иду́ домо́й.\n…' });
   const list = h('div', { class: 'list deck-cards' });
   const content = h('div', {}, field('Name', name),
+    field('Language of the fronts', lang, 'A language code such as ru, de or ja, so card text is shown and read aloud in that language. Leave empty if it varies.'),
     field('Add cards', csv, 'One card per line: front, back, optional note. Comma or tab separated; quote fields containing commas. Paste from a spreadsheet works.'),
     h('div', { class: 'toolbar' },
       h('button', {
         class: 'btn primary',
         onclick: async () => {
           if (!name.value.trim()) return toast('Name is required');
+          const code = lang.value.trim();
+          if (code && !/^[A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*$/.test(code)) return toast('Language should be a code such as ru or pt-BR');
+          const row = { name: name.value.trim(), lang: code };
           try {
             let id = d?.id;
-            if (id) await data.update('decks', id, { name: name.value.trim() });
-            else id = (await data.insert('decks', { name: name.value.trim() })).id;
+            if (id) await data.update('decks', id, row);
+            else id = (await data.insert('decks', row)).id;
             if (csv.value.trim()) toast(`Added ${await data.importCards(id, csv.value)} cards`); else toast('Saved');
             if (opts.onDone) { await loadMeta(); opts.onDone(id); } else { closeSheet(); rerender(); }
           } catch (e) { toast(e.message); }

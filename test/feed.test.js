@@ -167,3 +167,21 @@ test('feed_state includes a card sample only for decks used by an enabled notes 
   await sql`delete from generators where id = ${g.id}`;
   await sql`delete from decks where id in ${sql([a.id, b.id])}`;
 });
+
+test('flashcards carry the deck language and say when a card is reversed', () => {
+  const card = (id) => ({ id, front: `слово ${id}`, back: `word ${id}`, note: '', reps: 2, due: Date.now() - 1 });
+  const decks = normaliseState({ decks: { 7: { name: 'Russian', lang: 'ru', introduced_today: 0, due: [card(1), card(2)], new: [] } } }).decks;
+  const gen = GENERATOR_KINDS.flashcards;
+  const fwd = gen.generate({ deck_id: 7 }, { decks, excludeKeys: new Set() });
+  assert.equal(fwd.lang, 'ru');
+  assert.equal(fwd.reverse, false);
+  assert.match(fwd.front, /слово/);
+  const rand = Math.random;
+  Math.random = () => 0;
+  try {
+    const rev = gen.generate({ deck_id: 7, reverse: true }, { decks, excludeKeys: new Set() });
+    assert.equal(rev.reverse, true);
+    assert.match(rev.back, /слово/);
+  } finally { Math.random = rand; }
+  assert.equal(normaliseState({ decks: { 1: { name: 'x', introduced_today: 0, due: [], new: [] } } }).decks[1].lang, '');
+});
