@@ -96,6 +96,54 @@ const pickTopics = async (p, names) => {
   assert(count >= 40, `infinite scroll keeps loading (${count} cards)`);
   assert(kinds.has('article') && kinds.has('flashcard') && kinds.size >= 6, `mixes card kinds: ${[...kinds].join(', ')}`);
 
+  console.log('refresh on return');
+  await p.evaluate(() => scrollTo(0, 0)); await p.waitForTimeout(300);
+  const markFeed = () => p.evaluate(() => { document.querySelector('.feed')._mark = 1; });
+  const feedKept = () => p.evaluate(() => document.querySelector('.feed')?._mark === 1);
+  // Leave the app and come back, `minutes` later.
+  const awayFor = (minutes) => p.evaluate((ms) => {
+    const now = Date.now, setVis = (v) => { Object.defineProperty(document, 'visibilityState', { value: v, configurable: true }); document.dispatchEvent(new Event('visibilitychange')); };
+    setVis('hidden');
+    Date.now = () => now() + ms;
+    setVis('visible');
+    Date.now = now;
+    delete document.visibilityState;
+  }, minutes * 60e3);
+  await markFeed();
+  await awayFor(5);
+  assert(await feedKept(), 'a short absence keeps the feed as it was');
+  await awayFor(31);
+  await p.waitForSelector('.card');
+  assert(!(await feedKept()), 'coming back after 30+ minutes reloads the feed');
+  await markFeed();
+  await p.click('a[data-tab=saved]');
+  await awayFor(45);
+  await p.click('a[data-tab=feed]');
+  await p.waitForSelector('.card');
+  assert(!(await feedKept()), 'a long absence on another tab reloads the feed when it is next opened');
+
+  console.log('pull to refresh');
+  await p.waitForTimeout(300);
+  // Drag down from the top of the feed by `dy` pixels with synthetic touches.
+  const pull = (dy) => p.evaluate((dy) => {
+    const t = (y) => new Touch({ identifier: 1, target: document.body, clientX: 200, clientY: y });
+    document.dispatchEvent(new TouchEvent('touchstart', { touches: [t(200)], changedTouches: [t(200)] }));
+    for (let y = 200; y <= 200 + dy; y += 20) document.dispatchEvent(new TouchEvent('touchmove', { touches: [t(y)], changedTouches: [t(y)] }));
+    document.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [t(200 + dy)] }));
+  }, dy);
+  await markFeed();
+  await pull(60);
+  assert(await feedKept(), 'a short pull at the top does not refresh');
+  await pull(200);
+  await p.waitForSelector('.card');
+  assert(!(await feedKept()), 'pulling down far enough at the top refreshes the feed');
+  await p.waitForTimeout(300);
+  await markFeed();
+  await p.evaluate(() => scrollTo(0, 600)); await p.waitForTimeout(200);
+  await pull(200);
+  assert(await feedKept(), 'pulling while scrolled down does not refresh');
+  await p.evaluate(() => scrollTo(0, 0)); await p.waitForTimeout(300);
+
   console.log('feed type filter');
   await p.evaluate(() => scrollTo(0, 0)); await p.waitForTimeout(400);
   assert(await p.isVisible('#typebar') && (await p.$$eval('#typebar button', (b) => b.map((x) => x.textContent))).join() === 'All,Articles,Cards', 'the feed shows an All / Articles / Cards bar under the header');
