@@ -164,8 +164,8 @@ const pickTopics = async (p, names) => {
 
   console.log('hide + reader');
   await p.click('a[data-tab=feed]');
-  await p.waitForSelector('.k-article');
-  const hideId = await p.$eval('.k-article[data-source]', (el) => el.dataset.source);
+  await p.waitForSelector('.feed:not(.saved-list) .k-article'); // not the Saved list's card while it is still on screen
+  const hideId = await p.$eval('.feed:not(.saved-list) .k-article[data-source]', (el) => el.dataset.source);
   await p.click(`.k-article[data-source="${hideId}"] .act.more`);
   await p.click('#sheet .row:has-text("Hide source")');
   await p.waitForSelector('.toast.show:has-text("Hidden")');
@@ -524,10 +524,70 @@ const pickTopics = async (p, names) => {
   await p.waitForSelector('.k-note .act.save');
   await shot('notes-card');
 
+  console.log('offline reading');
+  const stored = (id) => p.evaluate((i) => new Promise((resolve) => {
+    const req = indexedDB.open('sift-offline', 1);
+    req.onsuccess = () => { const g = req.result.transaction('kv').objectStore('kv').get(`article:${i}`); g.onsuccess = () => resolve(g.result || null); };
+    req.onerror = () => resolve(null);
+  }), id);
+  const addArticle = async (n, title, text, saved = false) => {
+    const [row] = await sql`insert into items (source_id, topic_id, url, title, title_key, summary, domain, published_at, saved_at)
+      select id, topic_id, ${`https://sample.test/offline-${n}`}, ${title}, ${title.toLowerCase()}, 'Kept for later.', 'sample.test', now(), ${saved ? sql`now()` : null}
+      from sources where name = 'Simon Willison' returning id`;
+    await sql`insert into item_content (item_id, status, html, text_length) values (${row.id}, 'ok', ${`<p>${text}</p>`}, 2200)`;
+    return Number(row.id);
+  };
+  const here = await addArticle(1, '[Sample] Read me on the train', 'This paragraph was stored on the device.');
+  const elsewhere = await addArticle(2, '[Sample] Saved on another device', 'Saved somewhere else, read here.', true);
+  await p.evaluate((i) => { location.hash = `#/read/${i}`; }, here);
+  await p.waitForSelector('.reader-body p:has-text("stored on the device")');
+  await p.click('.reader-foot .act.save');
+  await p.waitForSelector('.toast.show:has-text("Saved")');
+  for (let i = 0; i < 20 && !(await stored(here)); i++) await p.waitForTimeout(100);
+  assert((await stored(here))?.read?.html.includes('stored on the device'), 'saving an article stores its text on the device');
+  await p.click('.reader-back');
+  await p.click('a[data-tab=saved]');
+  await p.waitForSelector(`.saved-list .card[data-item="${elsewhere}"]`);
+  for (let i = 0; i < 30 && !(await stored(elsewhere)); i++) await p.waitForTimeout(100);
+  assert((await stored(elsewhere))?.read?.html.includes('read here'), 'opening Saved stores copies of articles saved elsewhere');
+
+  // Go offline with an expired access token (the usual state when the phone has been offline a while) and reopen the app.
+  await p.evaluate(() => {
+    for (const k of Object.keys(localStorage).filter((x) => /^sb-.*-auth-token$/.test(x))) {
+      const v = JSON.parse(localStorage.getItem(k));
+      localStorage.setItem(k, JSON.stringify({ ...v, expires_at: Math.floor(Date.now() / 1000) - 60 }));
+    }
+  });
+  await ctx.setOffline(true);
+  const offlineErrors = errors.length;
+  await p.reload();
+  await p.waitForSelector('.saved-list .card');
+  assert(await p.isVisible('.offline-note'), 'offline, the app opens to Saved with an offline note');
+  const offlineIds = await p.$$eval('.saved-list .card[data-item]', (c) => c.map((x) => Number(x.dataset.item)));
+  assert(offlineIds.includes(here) && offlineIds.includes(elsewhere), 'offline, the Saved list shows both saved articles');
+  await shot('saved-offline');
+  await p.click(`.saved-list .card[data-item="${here}"] h3 a`);
+  await p.waitForSelector('.reader-body p:has-text("stored on the device")');
+  assert((await p.textContent('.reader-title')) === '[Sample] Read me on the train', 'offline, a saved article opens in the reader');
+  await shot('reader-offline');
+  await p.click('.reader-back');
+  await p.evaluate((i) => { location.hash = `#/read/${i}`; }, elsewhere);
+  await p.waitForSelector('.reader-body p:has-text("read here")');
+  assert(true, 'offline, opening a saved article straight from its link works too');
+  await ctx.setOffline(false);
+  errors.splice(offlineErrors); // failed network requests while offline are expected
+  await p.goto(`${BASE}/#/saved`);
+  await p.waitForSelector(`.saved-list .card[data-item="${here}"]`);
+  await p.click(`.saved-list .card[data-item="${here}"] .act.save`);
+  await p.waitForSelector('.toast.show:has-text("Removed")');
+  for (let i = 0; i < 20 && (await stored(here)); i++) await p.waitForTimeout(100);
+  assert(!(await stored(here)), 'unsaving removes the copy from the device');
+
   await p.click('a[data-tab=settings]');
   await p.click('button:has-text("Sign out")');
   await p.waitForSelector('form.login');
   assert(true, 'sign out returns to the sign-in form');
+  assert(!(await stored(elsewhere)), 'signing out clears the copies stored on the device');
 
   assert(errors.length === 0, `no browser errors${errors.length ? `: ${errors.join(' | ')}` : ''}`);
   await browser.close();

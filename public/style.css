@@ -143,6 +143,7 @@ main { max-width: 680px; margin: 0 auto; padding: 12px 12px 24px; }
 .btn:disabled { opacity: .5; }
 
 .status { text-align: center; color: var(--ink-3); padding: 28px 16px; font-size: 14px; }
+.offline-note { padding: 4px 16px 12px; }
 .skeleton { height: 140px; border-radius: var(--radius); background: linear-gradient(90deg, var(--surface) 0%, var(--surface-2) 50%, var(--surface) 100%); background-size: 200% 100%; animation: shimmer 1.4s infinite; border: 1px solid var(--line); }
 @keyframes shimmer { to { background-position: -200% 0; } }
 
