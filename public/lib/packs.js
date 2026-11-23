@@ -16,6 +16,7 @@ export function validatePack(pack) {
   for (const d of pack.decks || []) {
     if (!d.name) errs.push('deck needs a name');
     else decks.add(d.name);
+    if (d.lang != null && !/^([A-Za-z]{2,8}(-[A-Za-z0-9]{1,8})*)?$/.test(d.lang)) errs.push(`deck "${d.name}": lang must be a language code such as "ru"`);
     if (!Array.isArray(d.cards) || d.cards.some((c) => !Array.isArray(c) || !c[0] || !c[1])) errs.push(`deck "${d.name}": cards must be [front, back, note?] arrays`);
   }
   if (!Array.isArray(pack.topics) || !pack.topics.length) errs.push('pack needs at least one topic');
@@ -53,7 +54,7 @@ export async function installPack(data, pack) {
   const deckIds = new Map();
   for (const d of pack.decks || []) {
     if (existingDecks.has(d.name)) { deckIds.set(d.name, existingDecks.get(d.name)); continue; }
-    const row = await data.insert('decks', { name: d.name });
+    const row = await data.insert('decks', { name: d.name, lang: d.lang || '' });
     await data.addCards(row.id, d.cards);
     deckIds.set(d.name, row.id);
     added.decks++;

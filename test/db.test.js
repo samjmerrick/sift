@@ -34,15 +34,17 @@ test('a signed-in account that is not the owner sees and changes nothing', async
 
 test('owner can use tables, views and feed_state', async () => {
   await asUser(sql, async (tx) => {
-    const [deck] = await tx`insert into decks (name) values ('Test deck') returning id`;
+    const [deck] = await tx`insert into decks (name, lang) values ('Test deck', 'de') returning id`;
     await tx`insert into cards (deck_id, front, back) values (${deck.id}, 'a', 'b')`;
     const [stats] = await tx`select * from deck_stats where id = ${deck.id}`;
     assert.equal(Number(stats.cards), 1);
+    assert.equal(stats.lang, 'de');
     const [topic] = await tx`insert into topics (name) values ('T') returning id`;
     await tx`insert into sources (topic_id, kind, name, config) values (${topic.id}, 'rss', 'S', '{"url":"https://example.com/feed"}')`;
     const [{ feed_state: state }] = await tx`select feed_state()`;
     assert.equal(state.topics.length, 1);
     assert.ok(state.decks[deck.id].new.length === 1);
+    assert.equal(state.decks[deck.id].lang, 'de');
     const sources = await tx`select * from source_stats`;
     assert.equal(sources.length, 1);
   });

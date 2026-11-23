@@ -132,6 +132,8 @@ const pickTopics = async (p, names) => {
 
   await pickTopics(p, 'Russian practice');
   await p.waitForSelector('.k-flashcard .reveal');
+  const fcLangs = await p.$$eval('.k-flashcard .big', (els) => els.map((el) => el.getAttribute('lang')));
+  assert(fcLangs.length && fcLangs.every((l) => l === 'ru'), `Russian flashcard fronts are tagged with their deck's language (${fcLangs.join(', ')})`);
   await p.click('.k-flashcard .reveal');
   await p.click('.k-flashcard .grade .good');
   await p.waitForSelector('.k-flashcard .graded');
@@ -181,6 +183,14 @@ const pickTopics = async (p, names) => {
   await p.waitForSelector('.reader-fail, .reader-body, .reader-skel');
   assert(await p.isHidden('.tabbar'), 'reader view opens (tab bar hidden)');
   await shot('reader');
+  // Share: the system share sheet when there is one, else the link is copied.
+  await p.evaluate(() => { window.__shared = null; navigator.share = async (d) => { window.__shared = d; }; });
+  await p.click('.reader-bar [aria-label="Share"]');
+  assert((await p.evaluate(() => window.__shared?.url)) === 'https://sample.test/0', 'Share hands the original link to the share sheet');
+  await p.evaluate(() => { delete navigator.share; Object.defineProperty(navigator, 'share', { value: undefined, configurable: true }); window.__copied = null; navigator.clipboard.writeText = async (t) => { window.__copied = t; }; });
+  await p.click('.reader-bar [aria-label="Share"]');
+  await p.waitForSelector('.toast.show:has-text("Link copied")');
+  assert((await p.evaluate(() => window.__copied)) === 'https://sample.test/0', 'without a share sheet, Share copies the link');
   await p.click('.reader-back');
   await p.waitForSelector('.feed .card');
 

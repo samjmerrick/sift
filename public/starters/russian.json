@@ -51,6 +51,7 @@
  "decks": [
   {
    "name": "Russian core vocabulary",
+   "lang": "ru",
    "cards": [
     [
      "и",
