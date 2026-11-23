@@ -22,6 +22,7 @@ test('validatePack reports mistakes', () => {
   assert.ok(validatePack({ name: 'x', topics: [{ name: 't', kind: 'articles', sources: [{ kind: 'nope', name: 's' }] }] })[0].includes('unknown source kind'));
   assert.ok(validatePack({ name: 'x', topics: [{ name: 't', kind: 'cards', cards: [{ kind: 'flashcards', name: 'c', config: { deck: 'missing' } }] }] })[0].includes('deck'));
   assert.ok(validatePack({ topics: [] }).length >= 2);
+  assert.ok(validatePack({ name: 'x', decks: [{ name: 'd', lang: 'not a code', cards: [['a', 'b']] }], topics: [{ name: 't', kind: 'cards' }] })[0].includes('lang'));
 });
 
 test('validatePack requires a valid topic kind and keeps sources and cards apart', () => {
@@ -61,6 +62,8 @@ test('flashcard card types point at the installed deck', async () => {
   assert.equal(Number(fc.config.deck_id), Number(fc.id));
   const [{ n }] = await sql`select count(*)::int n from cards where deck_id = ${fc.id}`;
   assert.equal(n, 90);
+  const [{ lang }] = await sql`select lang from decks where id = ${fc.id}`;
+  assert.equal(lang, 'ru');
   const [p] = await sql`select config from generators where kind = 'prompts' limit 1`;
   assert.equal(typeof p.config.lines, 'string');
 });

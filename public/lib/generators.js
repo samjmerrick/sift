@@ -35,9 +35,9 @@ export const GENERATOR_KINDS = {
         status = 'new';
       }
       if (!card) return null;
-      const reverse = cfg.reverse && status !== 'new' && Math.random() < 0.5;
+      const reverse = Boolean(cfg.reverse) && status !== 'new' && Math.random() < 0.5;
       return {
-        key: `card:${card.id}`, kind: 'flashcard', card_id: card.id, deck_id: Number(cfg.deck_id), status, deck: deck.name,
+        key: `card:${card.id}`, kind: 'flashcard', card_id: card.id, deck_id: Number(cfg.deck_id), status, deck: deck.name, lang: deck.lang || '', reverse,
         front: reverse ? card.back : card.front, back: reverse ? card.front : card.back, note: card.note,
       };
     },
@@ -53,7 +53,7 @@ export const GENERATOR_KINDS = {
       const pool = [deck.sample, deck.new, deck.due].find((l) => l?.some((c) => !excludeKeys.has(`note:${c.id}`)));
       if (!pool) return null;
       const card = pick(pool.filter((c) => !excludeKeys.has(`note:${c.id}`)));
-      return { key: `note:${card.id}`, kind: 'note', deck: deck.name, title: card.front, body: card.back, note: card.note };
+      return { key: `note:${card.id}`, kind: 'note', deck: deck.name, lang: deck.lang || '', title: card.front, body: card.back, note: card.note };
     },
   },
 
