@@ -24,7 +24,6 @@
   },
   "devDependencies": {
     "@supabase/supabase-js": "2.118.0",
-    "esbuild": "^0.24.0",
-    "linkedom": "0.18.15"
+    "esbuild": "^0.24.0"
   }
 }

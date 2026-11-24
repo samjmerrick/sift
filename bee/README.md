@@ -17,8 +17,12 @@ instead of Supabase. The app itself stays on GitHub Pages, unchanged; it just ta
 
 ## Setting it up on bee
 
-Needs Node 22.13 or later (for `node:sqlite`) and the path of bee-database's SQLite file (in
-`~/services/bee-database`).
+Needs Node 22.13 or later (for `node:sqlite`) and the path of bee-database's SQLite file (on bee:
+`~/services/bee-database/data/mcp.db`). Bee has no system Node; it uses the official tarball in `~/.local/node`
+(put `~/.local/node/bin` first on `PATH`, and use `/home/sam/.local/node/bin/node` in the systemd unit).
+
+If cloudflared runs in Docker, point the tunnel at the host's address on the container network (for example
+`http://172.19.0.1:8787`), not `localhost`, which is the container itself.
 
 ```sh
 git clone https://github.com/samjmerrick/sift ~/sift && cd ~/sift && npm ci --omit=dev
