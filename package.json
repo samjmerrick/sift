@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "node scripts/dev.js",
     "fetch": "node scripts/fetch.js",
-    "test": "node --test --test-concurrency=1 test/*.test.js"
+    "test": "node --test --test-concurrency=1 test/*.test.js",
+    "preview": "node scripts/build-preview.js"
   },
   "engines": {
     "node": ">=20"
@@ -20,6 +21,7 @@
   },
   "devDependencies": {
     "@supabase/supabase-js": "2.118.0",
+    "esbuild": "^0.24.0",
     "linkedom": "0.18.15"
   }
 }

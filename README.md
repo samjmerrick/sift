@@ -208,6 +208,10 @@ RESET_DB=1 DATABASE_URL=postgres://localhost/sift_dev npm run dev   # http://loc
 
 `npm run dev` serves the app plus a minimal stand-in for the Supabase APIs the app uses, backed by your local Postgres with the real migrations and row level security. It's for UI work only; production talks to real Supabase. You can also use the official `supabase start` (Docker) with a `public/config.js` copied from `public/config.example.js`. `public/config.js` is gitignored; the deploy workflow writes it from the repository variables.
 
+### Preview build (no database)
+
+`npm run preview` writes `dist/sift-preview.html`: the real app (everything in `public/`, unchanged) bundled into one file with an in-memory stand-in for Supabase, filled with the starter packs and made-up articles from `preview/sample-data.js`. It needs no Postgres, no network and no sign-in, so it's handy for trying UI changes and sharing them for review (it is published as a private claude.ai artifact). `dist/sift-preview.local.html` is the same page as a full document to open straight from disk. Everything resets on reload, and Sign out simply reloads the sample data. Edit `preview/sample-data.js` to change what's in the feed.
+
 | Command | |
 |---|---|
 | `npm test` | Unit and database tests (needs Postgres; `TEST_DATABASE_URL`, default `postgres://postgres:postgres@localhost:5432/sift_test`). |
