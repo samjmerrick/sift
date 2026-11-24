@@ -7,7 +7,10 @@
     "dev": "node scripts/dev.js",
     "fetch": "node scripts/fetch.js",
     "test": "node --test --test-concurrency=1 test/*.test.js",
-    "preview": "node scripts/build-preview.js"
+    "preview": "node scripts/build-preview.js",
+    "bee:fetch": "node bee/fetch.js",
+    "bee:import": "node bee/import-supabase.js",
+    "bee:server": "node bee/server.js"
   },
   "engines": {
     "node": ">=20"

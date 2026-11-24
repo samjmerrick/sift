@@ -1,6 +1,6 @@
 # Sift
 
-A self-hosted, infinitely scrolling feed of useful things to read and practise. It's a web app you add to your phone's home screen, backed by a free Supabase project and hosted on GitHub Pages. You choose the topics; nobody else's algorithm is involved.
+A self-hosted, infinitely scrolling feed of useful things to read and practise. It's a web app you add to your phone's home screen, backed by a free Supabase project and hosted on GitHub Pages. The backend can instead be a personal SQLite database on a home server: see [bee/README.md](bee/README.md). You choose the topics; nobody else's algorithm is involved.
 
 **No LLM involved.** Everything is curated by rules you control:
 
