@@ -8,10 +8,9 @@
     "fetch": "node scripts/fetch.js",
     "test": "node --test --test-concurrency=1 test/*.test.js",
     "preview": "node scripts/build-preview.js",
-    "build:live": "node scripts/build-preview.js --live",
     "bee:fetch": "node bee/fetch.js",
     "bee:import": "node bee/import-supabase.js",
-    "test:live": "node scripts/build-preview.js && node scripts/build-preview.js --live && node test/live.e2e.mjs"
+    "bee:server": "node bee/server.js"
   },
   "engines": {
     "node": ">=20"

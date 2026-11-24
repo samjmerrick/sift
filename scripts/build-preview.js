@@ -3,16 +3,11 @@
 //
 //   npm run preview            → dist/sift-preview.html        (an HTML fragment, the form published as an artifact)
 //                              → dist/sift-preview.local.html  (the same as a full document, to open in a browser)
-//
-// With --live it builds the real Sift instead (npm run build:live → dist/sift.html): the same app on your data in
-// the personal database, loaded and saved through the artifact's "Personal database" connector (live/).
 import { build } from 'esbuild';
 import { readFileSync, readdirSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const LIVE = process.argv.includes('--live');
-const name = LIVE ? 'sift' : 'sift-preview';
 const root = fileURLToPath(new URL('..', import.meta.url));
 const read = (p) => readFileSync(join(root, p), 'utf8');
 
@@ -28,7 +23,7 @@ const startersPlugin = {
 };
 
 const result = await build({
-  entryPoints: [join(root, LIVE ? 'live/entry.js' : 'preview/entry.js')],
+  entryPoints: [join(root, 'preview/entry.js')],
   bundle: true, format: 'esm', target: 'es2022', write: false, minify: false, legalComments: 'none',
   plugins: [startersPlugin],
 });
@@ -47,28 +42,19 @@ const PREVIEW_CSS = `
   font: 600 11px/1.4 var(--sans); letter-spacing: .04em; text-transform: uppercase; color: var(--ink-3); background: var(--surface-2); }
 `;
 
-const LIVE_CSS = `
-/* Live build: loading / saving / error pill. */
-#live-status { position: fixed; z-index: 1000; left: 50%; transform: translateX(-50%);
-  bottom: calc(14px + env(safe-area-inset-bottom, 0px)); max-width: calc(100% - 32px); padding: 8px 14px; border-radius: 999px;
-  font: 500 13px/1.4 var(--sans); color: var(--ink-2, var(--ink-3)); background: var(--surface-2); box-shadow: 0 2px 10px rgba(0,0,0,.12); }
-#live-status.error { border-radius: 12px; color: var(--bad); }
-#live-status button { font: inherit; font-weight: 600; margin-left: 6px; padding: 2px 8px; border: 0; border-radius: 6px; background: transparent; color: inherit; text-decoration: underline; cursor: pointer; }
-`;
-
 const fragment = [
-  LIVE ? '<title>Sift</title>' : '<title>Sift preview</title>',
+  '<title>Sift preview</title>',
   '<meta name="theme-color" content="#f5f2ec" media="(prefers-color-scheme: light)">',
   '<meta name="theme-color" content="#151413" media="(prefers-color-scheme: dark)">',
-  `<style>${read('public/style.css').replace(/<\/style/gi, '<\\/style')}${LIVE ? LIVE_CSS : PREVIEW_CSS}</style>`,
+  `<style>${read('public/style.css').replace(/<\/style/gi, '<\\/style')}${PREVIEW_CSS}</style>`,
   bodyMarkup,
-  diagnostics.replace("window.SIFT_BUILD = 'dev'", `window.SIFT_BUILD = '${LIVE ? 'live' : 'preview'} ${build_id}'`),
+  diagnostics.replace("window.SIFT_BUILD = 'dev'", `window.SIFT_BUILD = 'preview ${build_id}'`),
   script(read(`public/vendor/${vendor}`)),
   script(appJs, ' type="module"'),
 ].join('\n');
 
 mkdirSync(join(root, 'dist'), { recursive: true });
-writeFileSync(join(root, `dist/${name}.html`), fragment);
-writeFileSync(join(root, `dist/${name}.local.html`),
+writeFileSync(join(root, 'dist/sift-preview.html'), fragment);
+writeFileSync(join(root, 'dist/sift-preview.local.html'),
   `<!doctype html>\n<html lang="en">\n<head>\n<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n</head>\n<body>\n${fragment}\n</body>\n</html>\n`);
-console.log(`dist/${name}.html  ${(fragment.length / 1024).toFixed(0)} KB`);
+console.log(`dist/sift-preview.html  ${(fragment.length / 1024).toFixed(0)} KB`);

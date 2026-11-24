@@ -24,7 +24,7 @@ const KEY = { muted_domains: 'domain', app_settings: 'key', item_content: 'item_
 
 /**
  * `onChange(op, table, row, patch?)` hears every insert, update and delete (cascades included) made through the
- * PostgREST layer. The live build (live/) uses it to save changes to the personal database.
+ * PostgREST layer. bee/server.js uses it to save changes to the personal database.
  */
 export function createDb({ onChange } = {}) {
   const t = Object.fromEntries(Object.keys(DEFAULTS).map((k) => [k, []]));

@@ -1,5 +1,4 @@
-// How Sift's tables are kept in the personal database (bee-database). Shared by the artifact (live/) and the
-// scripts that run on bee (bee/*.js).
+// How Sift's tables are kept in the personal database (bee-database). Used by everything in bee/.
 //
 // Every Sift row is one record: project "sift", collection = the table name, metadata = the row itself (with
 // Sift's own numeric `id`, or the table's key for muted_domains, app_settings and item_content). Title and content
@@ -16,7 +15,7 @@ export const KEYS = { muted_domains: 'domain', app_settings: 'key', item_content
 /** The row's key within its table (its `id`, or the KEYS column). */
 export const rowKey = (table, row) => String(row[KEYS[table] || 'id']);
 
-/** Record id used by the bee scripts, which write the database file directly (the artifact gets ids from `store`). */
+/** Record id for rows written by bee/ (records made through the connector get the server's own ids). */
 export const recordId = (table, row) => `sift-${table}-${rowKey(table, row)}`;
 
 const clip = (s, n) => (s == null ? '' : String(s)).slice(0, n);

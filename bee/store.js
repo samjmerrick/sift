@@ -1,4 +1,4 @@
-// Direct access to the personal database's SQLite file, for the scripts that run on bee (fetch, import).
+// Direct access to the personal database's SQLite file, for what runs on bee (server, fetch, import).
 // The bee-database server keeps its full-text index up to date with triggers, so plain inserts and updates here
 // are searchable straight away. Needs Node 22.13+ (node:sqlite).
 import { DatabaseSync } from 'node:sqlite';
@@ -21,6 +21,8 @@ export function openBee(path = process.env.BEE_DB) {
       WHERE project = ? AND collection = ? AND json_extract(metadata, ?) = ?`),
     remove: db.prepare('DELETE FROM records WHERE project = ? AND collection = ? AND json_extract(metadata, ?) = ?'),
     maxId: db.prepare("SELECT max(json_extract(metadata, '$.id')) AS m FROM records WHERE project = ? AND collection = ?"),
+    get: db.prepare('SELECT metadata FROM records WHERE project = ? AND collection = ? AND json_extract(metadata, ?) = ? ORDER BY n DESC LIMIT 1'),
+    version: db.prepare('PRAGMA data_version'),
     count: db.prepare('SELECT collection, count(*) AS n FROM records WHERE project = ? GROUP BY collection'),
   };
 
@@ -28,6 +30,10 @@ export function openBee(path = process.env.BEE_DB) {
     db,
     /** All rows of a Sift table. */
     rows: (table) => q.rows.all(PROJECT, table).map((r) => JSON.parse(r.metadata)),
+    /** One row by its key, or null. */
+    get(table, key) { const r = q.get.get(PROJECT, table, keyCol(table), key); return r ? JSON.parse(r.metadata) : null; },
+    /** Changes whenever another connection (the bee-database server, a cron run) commits a write. */
+    dataVersion: () => q.version.get().data_version,
     /** Add a row (ignored if a row with the same key was imported before). Returns true if it was added. */
     insert(table, row) {
       const r = toRecord(table, row);
