@@ -22,7 +22,11 @@ const DEFAULTS = {
 };
 const KEY = { muted_domains: 'domain', app_settings: 'key', item_content: 'item_id' }; // tables without an identity id
 
-export function createDb() {
+/**
+ * `onChange(op, table, row, patch?)` hears every insert, update and delete (cascades included) made through the
+ * PostgREST layer. The live build (live/) uses it to save changes to the personal database.
+ */
+export function createDb({ onChange } = {}) {
   const t = Object.fromEntries(Object.keys(DEFAULTS).map((k) => [k, []]));
   const seq = Object.fromEntries(Object.keys(DEFAULTS).map((k) => [k, 0]));
   const err = (message, code) => Object.assign(new Error(message), { code, status: 409 });
@@ -40,13 +44,23 @@ export function createDb() {
       r.title_key ||= String(r.title).toLowerCase();
     }
     t[table].push(r);
+    onChange?.('insert', table, r);
     return r;
   }
+
+  /** Load existing rows (e.g. from the personal database) without reporting them as changes. */
+  function load(table, rows) {
+    // Fields missing from stored rows (a null removed by a JSON merge patch, a column added later) get defaults.
+    t[table].push(...rows.map((r) => ({ ...DEFAULTS[table](), ...r })));
+    if (!KEY[table]) seq[table] = Math.max(seq[table], ...t[table].map((r) => Number(r.id) || 0));
+  }
+  const changed = (op, table, row, patch) => onChange?.(op, table, row, patch);
 
   // ON DELETE CASCADE / SET NULL, as in the migrations.
   function remove(table, rows) {
     const gone = new Set(rows);
     t[table] = t[table].filter((r) => !gone.has(r));
+    for (const r of rows) onChange?.('delete', table, r);
     const ids = new Set(rows.map((r) => r.id));
     const cascade = (child, col) => remove(child, t[child].filter((r) => ids.has(r[col])));
     if (table === 'topics') {
@@ -116,7 +130,7 @@ export function createDb() {
     };
   }
 
-  return { tables: t, insert, remove, views, feedState };
+  return { tables: t, insert, load, changed, remove, views, feedState };
 }
 
 // ---- PostgREST over fetch ----
@@ -224,7 +238,7 @@ export function createMockFetch(db, { functions, latency = 0 } = {}) {
     }
     if (method === 'PATCH') {
       const rows = source.filter(where);
-      for (const r of rows) Object.assign(r, clone(body));
+      for (const r of rows) { Object.assign(r, clone(body)); db.changed?.('update', table, r, clone(body)); }
       return wantRows ? reply(rows.map(pick(params.get('select')))) : json(204);
     }
     if (method === 'DELETE') {
@@ -259,4 +273,4 @@ export function createMockFetch(db, { functions, latency = 0 } = {}) {
   };
 }
 
-export { DAY, iso };
+export { DAY, iso, KEY };

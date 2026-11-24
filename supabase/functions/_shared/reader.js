@@ -115,7 +115,8 @@ const hnId = (url) => {
   } catch { return null; }
 };
 
-async function extractFor(item) {
+/** Extract one item's readable text (an HN text post or the linked page). Throws when there is none. */
+export async function extractFor(item) {
   const id = hnId(item.url);
   if (id) {
     const data = JSON.parse(await get(`https://hacker-news.firebaseio.com/v0/item/${id}.json`, { timeout: 12000 }));
