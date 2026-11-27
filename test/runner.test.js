@@ -105,3 +105,9 @@ test('reading an article: fetched once, then served from the database', async ()
   assert.equal((await app('/functions/v1/sift-fetch', { method: 'POST', body: '{"action":"fetch_all"}' })).status, 403);
   role = 'editor';
 });
+
+test('/sift redirects to /sift/ so relative links work', async () => {
+  const res = await worker.fetch(new Request('https://apps.test/sift?x=1', { redirect: 'manual' }), env, {});
+  assert.equal(res.status, 308);
+  assert.equal(res.headers.get('location'), 'https://apps.test/sift/?x=1');
+});

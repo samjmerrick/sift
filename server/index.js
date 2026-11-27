@@ -141,6 +141,8 @@ export default app('sift', {
   open: (pathname) => pathname.startsWith(`${PREFIX}/_bee/`),
   async fetch(request, env, ctx, bee) {
     const url = new URL(request.url);
+    // The page's links are relative, so it must be served at /sift/ (not /sift).
+    if (url.pathname === PREFIX && bee) return Response.redirect(`${url.origin}${PREFIX}/${url.search}`, 308);
     const path = url.pathname.slice(PREFIX.length) || '/';
     if (!bee) return runnerApi(request, env, path);
     if (path.startsWith('/rest/v1/') || path.startsWith('/functions/v1/')) return api(request, env, path, url.search, bee.user);
