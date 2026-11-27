@@ -1,82 +1,63 @@
-# Sift on the personal database (bee)
+# Sift on bee
 
-Sift's backend can be your personal database (bee-database, the SQLite store behind `mcp.samjmerrick.com`)
-instead of Supabase. The app itself stays on GitHub Pages, unchanged; it just talks to a small server on bee.
+Sift can run entirely on a home server next to [bee-database](https://github.com/samjmerrick/bee-database), at
+`https://home.samjmerrick.com/sift`, set up the same way as [Nibble](https://github.com/samjmerrick/nibble): its own
+container, data stored in bee-database through its MCP endpoint, and people signed in by bee-database. The Supabase +
+GitHub Pages build described in the main README keeps working from the same `public/` code.
 
-- **`bee/server.js`** answers the same HTTP calls as Supabase (the PostgREST subset, password sign-in and the
-  `sift-fetch` function) that the app's supabase-js client makes, so `public/` needs no changes: point
-  `supabaseUrl` at this server. It keeps the rows in memory for queries (the same in-memory backend as the preview
-  build, `preview/mock-backend.js`) and writes every change straight to the SQLite file. Writes made by anything
-  else, such as Claude through the Personal database connector, are picked up on the next request. It fetches
-  every source hourly, and Settings → Fetch now, Preview and the reader work as before.
-- **Storage**: one record per Sift row, in project `sift`, with the table as the collection (`topics`, `sources`,
-  `items`, `cards`, ...) and the row itself in `metadata` (`bee/records.js`). So the data is also searchable and
-  queryable through the connector, like everything else in the personal database.
-- **Sign-in** is one password (`SIFT_PASSWORD`, optionally with `SIFT_EMAIL`). Sessions are signed tokens; ten
-  wrong passwords lock sign-in for 15 minutes.
+| Piece | Where |
+|---|---|
+| HTTP server: the app at `/sift`, the API it calls, sign-in check, hourly fetch | `bee/server.js` |
+| Database client (MCP, service token) | `bee/dbclient.js` |
+| Sift's rows in the database, mirrored in memory | `bee/store.js`, `bee/records.js` |
+| Fetching and reader text | `bee/jobs.js`, `supabase/functions/_shared/` |
+| One-off copy from Supabase | `bee/import-supabase.js` |
 
-## Setting it up on bee
+- **API**: the same calls as Supabase (the PostgREST subset and the `sift-fetch` function) that the app's
+  supabase-js client makes, under `/sift/rest/v1` and `/sift/functions/v1`. Queries are answered from memory by the
+  preview build's backend (`preview/mock-backend.js`).
+- **Storage**: one record per row, in project `sift`, with the table as the collection and the row in `metadata`. Sift
+  defines the project and collections on start. Records added or changed through the connector are picked up on the
+  next request. Sift has no database file of its own.
+- **Sign-in**: a signed-out visitor is sent to `/auth/web/login?next=/sift/`. Viewers of `sift` can read, editors can
+  change things, admins can do both. bee-database must list `/sift` in `SSO_PATHS`.
 
-Needs Node 22.13 or later (for `node:sqlite`) and the path of bee-database's SQLite file (in
-`~/services/bee-database`).
+## Running it
 
-```sh
-git clone https://github.com/samjmerrick/sift ~/sift && cd ~/sift && npm ci --omit=dev
-export BEE_DB=~/services/bee-database/<path to the .db file>
-cp "$BEE_DB" "$BEE_DB.before-sift"     # a backup, just in case
+On the server, next to bee-database:
 
-# 1. Copy everything from Supabase. Read-only there, and safe to run again (nothing is added twice).
-#    DATABASE_URL is the Supabase "Session pooler" connection string (Project → Connect).
-DATABASE_URL='postgres://…' npm run bee:import
+1. Let the database sign people in for Sift: set `SSO_PATHS=/nibble,/sift` in `bee-database/.env`, then
+   `docker compose up -d mcp-db` there.
+2. Start Sift:
+   ```sh
+   cd ~/services/sift
+   cp .env.example .env && chmod 600 .env && nano .env    # DB_TOKEN = MCP_API_TOKEN from bee-database/.env
+   docker compose up -d --build
+   curl http://127.0.0.1:8767/health
+   ```
+3. Copy the data from Supabase, before using the app. Supabase is only read, and running it again adds nothing twice.
+   `DATABASE_URL` is the "Session pooler" connection string (Supabase → Connect):
+   ```sh
+   read -rs DATABASE_URL && export DATABASE_URL
+   docker compose exec -e DATABASE_URL sift node bee/import-supabase.js
+   docker compose restart sift
+   ```
+4. In the Cloudflare tunnel, route `home.samjmerrick.com` path `^/sift(/.*)?$` to `http://sift:8000`, **above** the
+   rule that sends the rest of the hostname to the database.
 
-# 2. Run the server (as a service, so it survives reboots; see below).
-BEE_DB=$BEE_DB SIFT_PASSWORD='…' SIFT_EMAIL='you@example.com' SIFT_ORIGIN='https://samjmerrick.github.io' npm run bee:server
-curl localhost:8787/health
-```
+Then open `https://home.samjmerrick.com/sift` and add it to your home screen.
 
-3. **Give it an HTTPS address.** The GitHub Pages app is served over HTTPS, so the API must be too. Add a hostname
-   to the tunnel that already serves `mcp.samjmerrick.com`, for example `sift-api.samjmerrick.com` →
-   `http://localhost:8787`.
-4. **Point the app at it.** In the repository's Settings → Secrets and variables → Actions → Variables, set
-   `SUPABASE_URL` to that address (e.g. `https://sift-api.samjmerrick.com`) and `SUPABASE_ANON_KEY` to any
-   non-empty value (e.g. `bee`; it isn't used). Re-run the Deploy workflow. Then sign in on your phone with
-   `SIFT_EMAIL` and `SIFT_PASSWORD`.
+Settings (environment, in `.env`) are listed at the top of `bee/server.js`. `docker compose exec sift node bee/fetch.js`
+fetches every source once, by hand.
 
-A systemd unit, as `~/.config/systemd/user/sift.service` (then `systemctl --user enable --now sift`):
-
-```ini
-[Unit]
-Description=Sift API on the personal database
-After=network-online.target
-
-[Service]
-WorkingDirectory=%h/sift
-Environment=BEE_DB=%h/services/bee-database/<path to the .db file>
-Environment=SIFT_EMAIL=you@example.com
-Environment=SIFT_ORIGIN=https://samjmerrick.github.io
-EnvironmentFile=%h/.config/sift.env
-ExecStart=/usr/bin/env node bee/server.js
-Restart=on-failure
-
-[Install]
-WantedBy=default.target
-```
-
-with `SIFT_PASSWORD=…` in `~/.config/sift.env` (`chmod 600`). For the unit to run while you're logged out:
-`loginctl enable-linger $USER`.
-
-Other settings: `PORT` (default 8787), `SIFT_FETCH_MINUTES` (default 60; 0 turns the hourly fetch off, and then
-`node bee/fetch.js` from cron does the same job).
-
-## Retiring Supabase
+## Retiring the old setup
 
 Once the app has worked on bee for a while: unschedule the Supabase cron job
-(`select cron.unschedule('sift-fetch');`), then pause or delete the Supabase project. Nothing here deletes
-anything in Supabase.
+(`select cron.unschedule('sift-fetch');`), pause or delete the Supabase project, and remove the GitHub Pages deploy.
+The earlier API-only server (the `sift` systemd user service behind `sift-api.samjmerrick.com`) is replaced by the
+container: `systemctl --user disable --now sift`, and drop its tunnel rule.
 
 ## Testing
 
-`npm run preview && node test/bee.e2e.mjs` imports the preview's sample data into a throwaway copy of the
-bee-database schema, starts `bee/server.js`, and runs the real app in Chromium against it: sign-in and access
-control, the feed, saving reactions and seen state, adding and fetching a source, the reader, updates and cascading
-deletes, outside writes being picked up, reload, and `bee/fetch.js`.
+`test/bee.e2e.mjs` runs the importer, the server and the real app in Chromium against a throwaway bee-database; the
+commands are at the top of the file.

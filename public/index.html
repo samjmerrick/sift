@@ -83,9 +83,9 @@
       btn.textContent = 'Clear cache and reload';
       btn.onclick = async function () {
         try {
-          var regs = navigator.serviceWorker ? await navigator.serviceWorker.getRegistrations() : [];
-          for (var r of regs) await r.unregister();
-          if (window.caches) for (var k of await caches.keys()) await caches.delete(k);
+          var reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
+          if (reg) await reg.unregister();
+          if (window.caches) for (var k of await caches.keys()) if (k.indexOf('sift-') === 0) await caches.delete(k);
         } catch (_) {}
         location.replace(location.pathname + '?r=' + Date.now());
       };

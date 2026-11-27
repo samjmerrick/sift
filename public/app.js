@@ -71,7 +71,13 @@ const data = (() => {
   if (!config.supabaseUrl || !config.supabaseKey) { startupError = 'config.js is missing the Supabase URL or key.'; return null; }
   if (!window.supabase) { startupError = "The Supabase library (vendor/supabase-js) didn't load. A content blocker or a stale cached copy can cause this."; return null; }
   try {
-    return createData(window.supabase.createClient(config.supabaseUrl, config.supabaseKey, { auth: { persistSession: true, autoRefreshToken: true } }));
+    // On bee (config.bee) the server signs people in with a cookie, so supabase-js keeps no session of its own.
+    // A 401 means that cookie has gone: reloading sends you to the sign-in page.
+    const options = config.bee ? {
+      auth: { persistSession: false, autoRefreshToken: false },
+      global: { fetch: async (...args) => { const res = await fetch(...args); if (res.status === 401) location.reload(); return res; } },
+    } : { auth: { persistSession: true, autoRefreshToken: true } };
+    return createData(window.supabase.createClient(config.supabaseUrl, config.supabaseKey, options), { bee: config.bee });
   } catch (e) {
     startupError = `Couldn't set up Supabase: ${e.message}`;
     return null;
@@ -142,8 +148,9 @@ function showSetup() {
 /** Drop service-worker caches and reload — fixes "stuck on an old version". */
 async function hardReload() {
   try {
-    for (const r of (await navigator.serviceWorker?.getRegistrations?.()) || []) await r.unregister();
-    for (const k of (await caches?.keys?.()) || []) await caches.delete(k);
+    // Only Sift's own: on bee other apps share the origin.
+    await (await navigator.serviceWorker?.getRegistration?.())?.unregister();
+    for (const k of (await caches?.keys?.()) || []) if (k.startsWith('sift-')) await caches.delete(k);
   } catch { /* best effort */ }
   location.reload();
 }

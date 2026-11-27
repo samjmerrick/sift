@@ -6,6 +6,24 @@
 
 export const PROJECT = 'sift';
 
+/** The project and collection descriptions Sift defines in bee-database on start. */
+export const PROJECT_INFO = {
+  project: {
+    name: 'Sift',
+    description: 'Sift, the personal reading and practice feed.',
+    guide: "Sift's data. Every record is one row of one of its tables: the collection is the table and `metadata` is "
+      + 'the row, with Sift\'s own numeric `id` (muted_domains is keyed by `domain`, app_settings by `key`, item_content '
+      + "by `item_id`). Rows refer to each other by those ids (source_id, topic_id, deck_id). Sift's app is the normal "
+      + 'way to change them; if you add a record here, give it an unused numeric id.',
+  },
+  collections: {
+    topics: 'Topics in the feed.', sources: 'RSS and Hacker News sources.', generators: 'Practice card types.',
+    decks: 'Flashcard and note decks.', cards: 'Cards in a deck.', items: 'Fetched articles.',
+    saved_cards: 'Saved practice cards.', muted_domains: 'Muted sites.', app_settings: 'App settings.',
+    item_content: 'Reader text of articles.',
+  },
+};
+
 /** Tables, in load order (parents first). */
 export const TABLES = ['topics', 'sources', 'generators', 'decks', 'cards', 'items', 'saved_cards', 'muted_domains', 'app_settings', 'item_content'];
 
@@ -14,9 +32,6 @@ export const KEYS = { muted_domains: 'domain', app_settings: 'key', item_content
 
 /** The row's key within its table (its `id`, or the KEYS column). */
 export const rowKey = (table, row) => String(row[KEYS[table] || 'id']);
-
-/** Record id for rows written by bee/ (records made through the connector get the server's own ids). */
-export const recordId = (table, row) => `sift-${table}-${rowKey(table, row)}`;
 
 const clip = (s, n) => (s == null ? '' : String(s)).slice(0, n);
 

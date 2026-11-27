@@ -2,7 +2,7 @@
 import { normaliseState } from './feed.js';
 import { parseCsv } from './csv.js';
 
-export function createData(client) {
+export function createData(client, { bee = false } = {}) {
   const check = ({ data, error }) => {
     if (error) throw new Error(error.message || String(error));
     return data;
@@ -14,9 +14,13 @@ export function createData(client) {
     client,
 
     // ---- auth ----
-    async session() { return check(await client.auth.getSession()).session; },
+    // On bee the page is only served to signed-in people, so there is no session to check here.
+    async session() { return bee ? {} : check(await client.auth.getSession()).session; },
     async signIn(email, password) { return check(await client.auth.signInWithPassword({ email, password })); },
-    async signOut() { await client.auth.signOut(); },
+    async signOut() {
+      if (bee) await fetch('logout', { method: 'POST', redirect: 'follow' });
+      else await client.auth.signOut();
+    },
 
     // ---- feed ----
     async feedState() {

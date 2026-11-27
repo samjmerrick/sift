@@ -1,7 +1,7 @@
-// One-off: copy everything from Sift's Supabase database into the personal database on bee. Safe to run again:
-// rows already imported are skipped. Supabase is only read, never changed.
+// One-off: copy everything from Sift's Supabase database into bee-database. Safe to run again: rows already
+// imported are skipped. Supabase is only read, never changed.
 //
-//   DATABASE_URL='postgres://…' BEE_DB=~/services/bee-database/data/bee.db node bee/import-supabase.js
+//   docker compose exec -e DATABASE_URL='postgres://…' sift node bee/import-supabase.js
 //
 // DATABASE_URL is the Supabase "Session pooler" connection string (Project → Connect), as for npm run fetch.
 // For testing, --json file.json imports { table: [rows] } instead.
@@ -36,18 +36,22 @@ const data = jsonArg > 0 ? JSON.parse(readFileSync(process.argv[jsonArg + 1], 'u
   : process.env.DATABASE_URL ? await fromPostgres(process.env.DATABASE_URL)
   : (console.error('Set DATABASE_URL (Supabase session pooler) or pass --json file'), process.exit(1));
 
-const bee = openBee();
-const before = bee.counts();
-const report = bee.transaction(() => {
-  const r = {};
+const bee = await openBee();
+try {
+  const before = bee.counts();
+  const had = new Set((await Promise.all((data.item_content || []).map(async (r) => ((await bee.content(r.item_id)) ? Number(r.item_id) : null)))).filter(Boolean));
   for (const t of TABLES) {
     const rows = (data[t] || []).map(clean);
     let n = 0;
-    for (const row of rows) if (bee.insert(t, row)) n++;
-    r[t] = `${n} added, ${rows.length - n} already there`;
+    for (const row of rows) {
+      if (t === 'item_content' && had.has(row.item_id)) continue;
+      if (bee.insert(t, row)) n++;
+      if (n % 200 === 0) await bee.flush();
+    }
+    await bee.flush();
+    console.log(`${t.padEnd(14)} ${n} added, ${rows.length - n} already there`);
   }
-  return r;
-});
-for (const [t, msg] of Object.entries(report)) console.log(`${t.padEnd(14)} ${msg}`);
-console.log('Before:', JSON.stringify(before), '\nAfter: ', JSON.stringify(bee.counts()));
-bee.close();
+  console.log('Before:', JSON.stringify(before), '\nAfter: ', JSON.stringify(bee.counts()));
+} finally {
+  await bee.close();
+}

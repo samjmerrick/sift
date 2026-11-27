@@ -1,4 +1,4 @@
-// Fetching for Sift on bee, against the personal database's SQLite file (bee/store.js). The same rules as the
+// Fetching for Sift on bee, with the rows kept in bee-database (bee/store.js). The same rules as the
 // Supabase version (supabase/functions/_shared/store.js and reader.js). Used by bee/server.js (hourly, and for
 // Settings → Fetch now) and by bee/fetch.js (one run from the command line).
 import { previewSource, normaliseUrl, titleKey, domainOf, get, decodeEntities, htmlToText, truncate } from '../supabase/functions/_shared/fetcher.js';
@@ -54,6 +54,7 @@ export async function fetchSources(bee, sources = bee.rows('sources').filter((s)
       results[src.name] = { added, error: message };
     }
   });
+  await bee.flush();
   return results;
 }
 
@@ -93,12 +94,13 @@ export async function readItem(bee, item) {
   const full = { item_id: item.id, ...row, fetched_at: iso() };
   bee.remove('item_content', item.id); // an old failure, if any
   bee.insert('item_content', full);
+  await bee.flush();
   return full;
 }
 
 /** Cached reader text for an item, fetching it on first request (failures are retried after a day). */
 export async function getContent(bee, item) {
-  let row = bee.get('item_content', item.id);
+  let row = await bee.content(item.id);
   if (!row || (row.status === 'failed' && Date.now() - Date.parse(row.fetched_at) > DAY)) row = await readItem(bee, item);
   const { status, title, byline, site_name, html, text_length, lead_image, error } = row;
   return { status, title: title ?? item.title ?? null, byline, site_name, html, text_length, lead_image, error, url: item.url };
@@ -110,7 +112,7 @@ export function prune(bee) {
   const cutoffFetched = Date.now() - 60 * DAY;
   const old = bee.rows('items').filter((i) => !i.saved_at
     && ((i.seen_at && Date.parse(i.seen_at) < cutoffSeen) || Date.parse(i.fetched_at) < cutoffFetched));
-  bee.transaction(() => { for (const i of old) { bee.remove('items', i.id); bee.remove('item_content', i.id); } });
+  for (const i of old) { bee.remove('items', i.id); bee.remove('item_content', i.id); }
   return old.length;
 }
 
@@ -119,5 +121,6 @@ export async function fetchAll(bee) {
   const results = await fetchSources(bee);
   const summaries = await enrichSummaries(bee);
   const removed = prune(bee);
+  await bee.flush();
   return { results, summaries, removed };
 }
