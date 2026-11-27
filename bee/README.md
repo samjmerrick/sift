@@ -3,7 +3,7 @@
 Sift can run entirely on a home server next to [bee-database](https://github.com/samjmerrick/bee-database), at
 `https://home.samjmerrick.com/sift`, set up the same way as [Nibble](https://github.com/samjmerrick/nibble): its own
 container, data stored in bee-database through its MCP endpoint, and people signed in by bee-database. The Supabase +
-GitHub Pages build described in the main README keeps working from the same `public/` code.
+GitHub Pages build described in the main README still works from the same `public/` code.
 
 | Piece | Where |
 |---|---|
@@ -50,12 +50,11 @@ Then open `https://home.samjmerrick.com/sift` and add it to your home screen.
 Settings (environment, in `.env`) are listed at the top of `bee/server.js`. `docker compose exec sift node bee/fetch.js`
 fetches every source once, by hand.
 
-## Retiring the old setup
+## Moving from Supabase
 
-Once the app has worked on bee for a while: unschedule the Supabase cron job
-(`select cron.unschedule('sift-fetch');`), pause or delete the Supabase project, and remove the GitHub Pages deploy.
-The earlier API-only server (the `sift` systemd user service behind `sift-api.samjmerrick.com`) is replaced by the
-container: `systemctl --user disable --now sift`, and drop its tunnel rule.
+After the import, and once the app works on bee: unschedule the Supabase cron job
+(`select cron.unschedule('sift-fetch');`), pause or delete the Supabase project, and leave the repository variable
+`DEPLOY_PAGES` unset so nothing is published to GitHub Pages.
 
 ## Testing
 

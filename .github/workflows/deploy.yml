@@ -1,4 +1,5 @@
-# Test, then publish the app to GitHub Pages.
+# Test, then (only when the repository variable DEPLOY_PAGES is "true") publish the app to GitHub Pages.
+# This repository's own Sift runs on bee (bee/README.md), so it leaves DEPLOY_PAGES unset and only tests.
 # Required repository variables: SUPABASE_URL and SUPABASE_ANON_KEY (public values; written to public/config.js).
 # With the backend on bee (bee/README.md), SUPABASE_URL is the bee server's address and the key can be any value.
 # Optional: also deploy database migrations + the Edge Function with the Supabase CLI. Set the repository variable
@@ -45,7 +46,7 @@ jobs:
 
   supabase:
     needs: test
-    if: ${{ vars.SUPABASE_PROJECT_REF != '' }}
+    if: ${{ vars.DEPLOY_PAGES == 'true' && vars.SUPABASE_PROJECT_REF != '' }}
     runs-on: ubuntu-latest
     env:
       SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
@@ -66,7 +67,7 @@ jobs:
   pages:
     needs: [test, supabase]
     # Deploy even when the Supabase job is skipped (not configured), but not when it failed.
-    if: ${{ always() && needs.test.result == 'success' && needs.supabase.result != 'failure' }}
+    if: ${{ always() && vars.DEPLOY_PAGES == 'true' && needs.test.result == 'success' && needs.supabase.result != 'failure' }}
     runs-on: ubuntu-latest
     environment:
       name: github-pages

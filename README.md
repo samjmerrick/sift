@@ -128,6 +128,8 @@ It's a **single-user** app: one owner account per deployment. Each person who wa
 
 ## Deploy your own
 
+These steps use Supabase and GitHub Pages. To run it on your own server instead, see [bee/README.md](bee/README.md).
+
 You need a [GitHub](https://github.com) account and a free [Supabase](https://supabase.com) account. Allow about 15 minutes. The Supabase CLI is needed for steps 2 and 3 (`npm install -g supabase`, or see the [install docs](https://supabase.com/docs/guides/local-development/cli/getting-started)).
 
 ### 1. Fork and clone
@@ -166,7 +168,9 @@ No other account can read or change anything, even if sign-ups are on. Turning o
    - `SUPABASE_URL`: your project URL, `https://YOUR_PROJECT_REF.supabase.co`
    - `SUPABASE_ANON_KEY`: the publishable key, from **Project Settings → API Keys** (`sb_publishable_…`, or the legacy `anon` key)
 
-   Both are public by design (they ship to every browser). Your data is protected by row level security and your login.
+   - `DEPLOY_PAGES`: `true`. Without it the workflow only runs the tests.
+
+   Both Supabase values are public by design (they ship to every browser). Your data is protected by row level security and your login.
 2. **Settings → Pages → Build and deployment → Source: GitHub Actions**.
 3. **Actions → Deploy → Run workflow** (or push any commit to `main`). When it finishes, the app is at `https://YOUR_USERNAME.github.io/YOUR_REPO/`.
 
