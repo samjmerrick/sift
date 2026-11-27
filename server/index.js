@@ -2,7 +2,7 @@
 // fetching runner on bee uses. Rows live in this app's D1. People and roles are the gateway's (Cloudflare Access sign-in);
 // viewers of `sift` can read, editors can change things. Feeds are fetched by the runner on bee (see runner/).
 import { app } from 'bee-kit';
-import { rest, applyOps, importRows, HttpError } from './rest.js';
+import { rest, applyOps, HttpError } from './rest.js';
 import { feedState } from './feed.js';
 import { runJob, claim, finish, tidy } from './jobs.js';
 
@@ -57,9 +57,6 @@ async function runnerApi(request, env, path) {
   }
   if (path === '/_bee/apply' && request.method === 'POST') {
     return json({ applied: await applyOps(db, (await request.json()).ops) });
-  }
-  if (path === '/_bee/import' && request.method === 'POST') {
-    return json({ imported: await importRows(db, await request.json()) });
   }
   return json({ message: 'not found' }, 404);
 }

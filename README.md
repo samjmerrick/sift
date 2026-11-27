@@ -1,6 +1,18 @@
 # Sift
 
-A self-hosted, infinitely scrolling feed of useful things to read and practise. It's a web app you add to your phone's home screen, backed by a free Supabase project and hosted on GitHub Pages. It can instead run wholly on a home server next to bee-database: see [bee/README.md](bee/README.md). You choose the topics; nobody else's algorithm is involved.
+A self-hosted, infinitely scrolling feed of useful things to read and practise. It's a web app you add to your phone's home screen. This copy runs as a Cloudflare Worker with its own D1 database behind Cloudflare Access (see [Running on Cloudflare](#running-on-cloudflare)); it can also run on a free Supabase project with GitHub Pages. You choose the topics; nobody else's algorithm is involved.
+
+## Running on Cloudflare
+
+This is how the author runs it, as an app of the Bee platform (`samjmerrick/bee-kit`).
+
+- `server/` is the Worker. It serves the page and answers the PostgREST-style calls the app's supabase-js client makes (`server/rest.js`), builds `feed_state` in one SQL statement (`server/feed.js`) and queues slow work in the `jobs` table (`server/jobs.js`).
+- `migrations/` is the D1 schema. `app.json` is the app's manifest: its path, the project whose roles apply (viewer reads, editor changes) and the `/_bee` path that skips Access.
+- `runner/` fetches feeds and reads articles, because that needs more CPU than the free Workers plan gives a request. It long-polls `/sift/_bee/jobs` with a bearer token (the app's `RUNNER_TOKEN` secret), and fetches every source hourly. Run it anywhere with Docker: put `SIFT_URL` and `RUNNER_TOKEN` in `.env` and `docker compose up -d --build`.
+- Pushing to `main` runs the tests (`npm run test:d1`) and deploys with the bee-kit action; the repository needs the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets.
+- The D1 `feed_state` result is one database cell (limit 2 MB); with 1,000 items it is about 0.8 MB.
+
+The rest of this README describes the Supabase build, which shares the app code in `public/`.
 
 **No LLM involved.** Everything is curated by rules you control:
 
@@ -128,7 +140,7 @@ It's a **single-user** app: one owner account per deployment. Each person who wa
 
 ## Deploy your own
 
-These steps use Supabase and GitHub Pages. To run it on your own server instead, see [bee/README.md](bee/README.md).
+These steps use Supabase and GitHub Pages. To run it on Cloudflare instead, see the section above.
 
 You need a [GitHub](https://github.com) account and a free [Supabase](https://supabase.com) account. Allow about 15 minutes. The Supabase CLI is needed for steps 2 and 3 (`npm install -g supabase`, or see the [install docs](https://supabase.com/docs/guides/local-development/cli/getting-started)).
 
