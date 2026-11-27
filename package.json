@@ -10,7 +10,9 @@
     "preview": "node scripts/build-preview.js",
     "bee:fetch": "node bee/fetch.js",
     "bee:import": "node bee/import-supabase.js",
-    "bee:server": "node bee/server.js"
+    "bee:server": "node bee/server.js",
+    "test:d1": "node --test --test-concurrency=1 test/worker.test.js test/runner.test.js",
+    "runner": "node runner/run.js"
   },
   "engines": {
     "node": ">=20"
@@ -21,7 +23,8 @@
     "@mozilla/readability": "0.6.0",
     "fast-xml-parser": "5.11.2",
     "linkedom": "0.18.15",
-    "postgres": "3.4.9"
+    "postgres": "3.4.9",
+    "bee-kit": "github:samjmerrick/bee-kit"
   },
   "devDependencies": {
     "@supabase/supabase-js": "2.118.0",

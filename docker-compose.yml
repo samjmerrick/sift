@@ -1,18 +1,9 @@
-# Sift runs next to bee-database, on the same Docker network, and cloudflared sends /sift to it.
-# Needs a .env here with DB_TOKEN (bee's MCP_API_TOKEN, or another admin token) and PUBLIC_URL.
+# The Sift runner on bee. Needs a .env next to this file with:
+#   SIFT_URL=https://apps.samjmerrick.com/sift
+#   RUNNER_TOKEN=<the app's RUNNER_TOKEN secret>
 services:
-  sift:
+  sift-runner:
     build: .
-    container_name: sift
+    container_name: sift-runner
     restart: unless-stopped
     env_file: .env
-    environment:
-      DB_URL: ${DB_URL:-http://mcp-db:8000}
-    ports:
-      - "127.0.0.1:8767:8000"   # only if cloudflared runs on the host, not in Docker
-    networks: [bee]
-
-networks:
-  bee:
-    name: ${BEE_NETWORK:-ha-net}   # the Docker network bee-database and cloudflared share on this server
-    external: true
