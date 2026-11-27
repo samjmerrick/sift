@@ -1,13 +1,10 @@
 {
   "name": "sift",
   "version": "0.1.0",
-  "description": "A self-hosted, LLM-free, infinitely scrolling feed of articles and practice cards you configure. Supabase + GitHub Pages.",
+  "description": "A self-hosted, LLM-free, infinitely scrolling feed of articles and practice cards you configure. Cloudflare Worker + D1, with a small fetcher.",
   "type": "module",
   "scripts": {
-    "dev": "node scripts/dev.js",
-    "fetch": "node scripts/fetch.js",
     "test": "node --test --test-concurrency=1 test/*.test.js",
-    "preview": "node scripts/build-preview.js",
     "test:d1": "node --test --test-concurrency=1 test/worker.test.js test/runner.test.js",
     "runner": "node runner/run.js"
   },
@@ -19,11 +16,9 @@
     "@mozilla/readability": "0.6.0",
     "fast-xml-parser": "5.11.2",
     "linkedom": "0.18.15",
-    "postgres": "3.4.9",
     "bee-kit": "github:samjmerrick/bee-kit"
   },
   "devDependencies": {
-    "@supabase/supabase-js": "2.118.0",
-    "esbuild": "^0.24.0"
+    "@supabase/supabase-js": "2.118.0"
   }
 }

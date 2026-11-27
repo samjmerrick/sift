@@ -1,6 +1,6 @@
 # Sift
 
-A self-hosted, infinitely scrolling feed of useful things to read and practise. It's a web app you add to your phone's home screen. This copy runs as a Cloudflare Worker with its own D1 database behind Cloudflare Access (see [Running on Cloudflare](#running-on-cloudflare)); it can also run on a free Supabase project with GitHub Pages. You choose the topics; nobody else's algorithm is involved.
+A self-hosted, infinitely scrolling feed of useful things to read and practise. It's a web app you add to your phone's home screen. This copy runs as a Cloudflare Worker with its own D1 database behind Cloudflare Access (see [Running on Cloudflare](#running-on-cloudflare)); You choose the topics; nobody else's algorithm is involved.
 
 ## Running on Cloudflare
 
@@ -11,8 +11,6 @@ This is how the author runs it, as an app of the Bee platform (`samjmerrick/bee-
 - `runner/` fetches feeds and reads articles, because that needs more CPU than the free Workers plan gives a request. It long-polls `/sift/_bee/jobs` with a bearer token (the app's `RUNNER_TOKEN` secret), and fetches every source hourly. Run it anywhere with Docker: put `SIFT_URL` and `RUNNER_TOKEN` in `.env` and `docker compose up -d --build`.
 - Pushing to `main` runs the tests (`npm run test:d1`) and deploys with the bee-kit action; the repository needs the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets.
 - The D1 `feed_state` result is one database cell (limit 2 MB); with 1,000 items it is about 0.8 MB.
-
-The rest of this README describes the Supabase build, which shares the app code in `public/`.
 
 **No LLM involved.** Everything is curated by rules you control:
 
@@ -122,137 +120,14 @@ A pack only adds topics and decks whose names don't exist yet, so installing one
 
 Upgrading an existing install: the `topic_kind` migration turns topics with only card types into card topics, and splits topics that had both into the original (articles) plus a `<name> practice` card topic right after it.
 
-## How it's hosted (all free tiers)
-
-```
-GitHub Pages ──── the app (static files in public/; Supabase URL + publishable key in public/config.js)
-     │  supabase-js, signed in as you
-     ▼
-Supabase ──────── Postgres: all data; row level security lets only the owner account in (app_owner table)
-                  Edge Function `sift-fetch`: Preview / Fetch now buttons, and the hourly fetch
-                  pg_cron: calls sift-fetch every hour (secret generated in-database, kept in Vault)
-GitHub Actions ── Deploy: run tests → (optionally push migrations + function) → publish Pages
-```
-
-The feed ranking, card generation and spaced repetition run in the browser (`public/lib/`). Fetching runs in the Edge Function (`supabase/functions/`); `npm run fetch` runs the same code locally.
-
-It's a **single-user** app: one owner account per deployment. Each person who wants their own Sift forks the repo and creates their own Supabase project.
-
-## Deploy your own
-
-These steps use Supabase and GitHub Pages. To run it on Cloudflare instead, see the section above.
-
-You need a [GitHub](https://github.com) account and a free [Supabase](https://supabase.com) account. Allow about 15 minutes. The Supabase CLI is needed for steps 2 and 3 (`npm install -g supabase`, or see the [install docs](https://supabase.com/docs/guides/local-development/cli/getting-started)).
-
-### 1. Fork and clone
-
-Fork this repository on GitHub, then clone your fork.
-
-### 2. Create the Supabase project and apply the database
-
-1. In the [Supabase dashboard](https://supabase.com/dashboard), create a new project. Note the **database password** you set and the **project ref** (the `abcdefgh` in `https://abcdefgh.supabase.co`).
-2. From your clone:
-
-```bash
-supabase login
-supabase link --project-ref YOUR_PROJECT_REF
-supabase db push                      # applies supabase/migrations/ (schema, row level security, cron support)
-supabase functions deploy sift-fetch  # the fetcher; it checks the caller itself, so no JWT check at the gateway
-```
-
-(No CLI? Paste each file in `supabase/migrations/` into the SQL editor in filename order, and deploy the function with any other method you prefer.)
-
-### 3. Create your account and schedule the hourly fetch
-
-1. **Authentication → Users → Add user → Create new user**: your email and a password, with *Auto Confirm User* ticked.
-2. In the **SQL editor**, make that account the owner and schedule the fetch (replace both placeholders):
-
-```sql
-insert into app_owner (user_id) select id from auth.users where email = 'you@example.com';
-select private.schedule_fetch('https://YOUR_PROJECT_REF.supabase.co');
-```
-
-No other account can read or change anything, even if sign-ups are on. Turning off *Allow new users to sign up* (Authentication → Sign In / Providers) is still tidy.
-
-### 4. Publish the app to GitHub Pages
-
-1. In your fork: **Settings → Secrets and variables → Actions → Variables → New repository variable**. Add:
-   - `SUPABASE_URL`: your project URL, `https://YOUR_PROJECT_REF.supabase.co`
-   - `SUPABASE_ANON_KEY`: the publishable key, from **Project Settings → API Keys** (`sb_publishable_…`, or the legacy `anon` key)
-
-   - `DEPLOY_PAGES`: `true`. Without it the workflow only runs the tests.
-
-   Both Supabase values are public by design (they ship to every browser). Your data is protected by row level security and your login.
-2. **Settings → Pages → Build and deployment → Source: GitHub Actions**.
-3. **Actions → Deploy → Run workflow** (or push any commit to `main`). When it finishes, the app is at `https://YOUR_USERNAME.github.io/YOUR_REPO/`.
-
-### 5. Open it and add topics
-
-Open the URL, sign in with the account from step 3, and follow the prompt to **Settings → Topics → Add starter pack** (or create your own topic). New sources are fetched immediately, and then every hour.
-
-**On your phone**: open the URL, sign in, then **Add to Home Screen** (Safari share menu, or the Chrome ⋮ menu).
-
-### Optional: deploy database and function changes from CI
-
-By default you apply migrations and redeploy the function yourself when you pull updates (`supabase db push`, `supabase functions deploy sift-fetch`). To have every push to `main` do it for you, set the repository variable `SUPABASE_PROJECT_REF` and the secrets `SUPABASE_ACCESS_TOKEN` ([create one](https://supabase.com/dashboard/account/tokens)) and `SUPABASE_DB_PASSWORD`.
-
-### Updating
-
-Pull from the upstream repository into your fork, then apply new migrations (`supabase db push`), redeploy the function if it changed, and push. Your topics and data live in your Supabase database, so updates never touch them.
-
-### Free-tier notes
-
-- Supabase pauses free projects after about a week without activity. The hourly fetch should keep yours awake; if it pauses anyway, restore it from the dashboard.
-- Everything here fits comfortably inside the free plans for a single user.
-
-### Troubleshooting
-
-- **Blank page, or "Can't start"**: the app shows what's wrong. Usually the `SUPABASE_URL` / `SUPABASE_ANON_KEY` variables are missing or wrong (the deploy fails with a message if they're unset). Fix them and re-run the workflow. **Clear cache and reload** helps if the phone is stuck on an old version.
-- **Sign-in works but everything is empty or errors**: step 3's `insert into app_owner …` wasn't run, or used a different email.
-- **A source shows an error**: open it from its topic page (Settings → Topics, then the topic) and press **Preview**. The message says whether the feed URL, a redirect or your filters are the problem.
-- **No new articles overnight**: check that `select private.schedule_fetch(…)` was run, and look at **Database → Cron** (or `select * from cron.job_run_details order by start_time desc limit 5;`).
-
 ## Development
 
-Requires Node 20+ and a local Postgres.
-
-```bash
-npm install
-createdb sift_dev
-RESET_DB=1 DATABASE_URL=postgres://localhost/sift_dev npm run dev   # http://localhost:5173, any email/password signs in
+```
+npm ci
+npm test          # unit tests, the D1 build against the mock backend, and the job path end to end
 ```
 
-`npm run dev` serves the app plus a minimal stand-in for the Supabase APIs the app uses, backed by your local Postgres with the real migrations and row level security. It's for UI work only; production talks to real Supabase. You can also use the official `supabase start` (Docker) with a `public/config.js` copied from `public/config.example.js`. `public/config.js` is gitignored; the deploy workflow writes it from the repository variables.
-
-### Preview build (no database)
-
-`npm run preview` writes `dist/sift-preview.html`: the real app (everything in `public/`, unchanged) bundled into one file with an in-memory stand-in for Supabase, filled with the starter packs and made-up articles from `preview/sample-data.js`. It needs no Postgres, no network and no sign-in, so it's handy for trying UI changes and sharing them for review (it is published as a private claude.ai artifact). `dist/sift-preview.local.html` is the same page as a full document to open straight from disk. Everything resets on reload, and Sign out simply reloads the sample data. Edit `preview/sample-data.js` to change what's in the feed.
-
-| Command | |
-|---|---|
-| `npm test` | Unit and database tests (needs Postgres; `TEST_DATABASE_URL`, default `postgres://postgres:postgres@localhost:5432/sift_test`). |
-| `node test/e2e.cjs` | Browser end-to-end test against `npm run dev` (needs Playwright). |
-| `npm run fetch` | Fetch all sources once from your machine (`DATABASE_URL` = a Postgres connection string). |
-
-```
-public/                       the app (vanilla JS, no build step)
-  app.js                      UI: feed, saved, settings
-  starters/                   starter packs (JSON) offered in Settings → Topics
-  lib/feed.js                 ranking + building feed pages (article topics give articles, card topics give cards)
-  lib/generators.js           practice card kinds + spaced repetition
-  lib/packs.js                validating and installing starter packs
-  lib/balance.js              rank → weight maths (falloff presets) for Settings → Topics
-  lib/rank.js                 saving the rank: positions and weights from the stored order + falloff
-  lib/theory.js               music theory (spelling, chords, scales, keys, chord shapes)
-  lib/data.js                 all Supabase reads/writes
-supabase/migrations/          schema, owner-only row level security, feed_state(), hourly cron support
-supabase/functions/sift-fetch Edge Function (preview / fetch now / hourly fetch)
-supabase/functions/_shared/   fetcher (RSS/Atom, HN, filtering, de-dup) + database writes
-scripts/fetch.js              fetch once from the command line
-.github/workflows/deploy.yml  tests + GitHub Pages (+ optional Supabase deploy)
-```
-
-Ranking is `source weight × community score factor × recency decay × your affinity for that source × your affinity for that domain`. Articles are marked read once they have been at least half on screen for about a second, and they never show again.
+The Worker's tests run on `node:sqlite` with the real migrations (`test/d1shim.js`), and `test/mock-backend.js` is the in-memory stand-in the app was built against, used as the reference for what the API must answer. To change the schema, add a numbered file to `migrations/`; the deploy applies it.
 
 ## License
 

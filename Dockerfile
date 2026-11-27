@@ -5,6 +5,5 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund --ignore-scripts || npm install --omit=dev --no-audit --no-fund
 COPY runner/ runner/
-COPY supabase/functions/_shared/ supabase/functions/_shared/
 USER node
 CMD ["node", "runner/run.js"]

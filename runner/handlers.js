@@ -1,5 +1,5 @@
 // What the runner does for each kind of job the app queues.
-import { previewSource } from '../supabase/functions/_shared/fetcher.js';
+import { previewSource } from './lib/fetcher.js';
 import { fetchSources, fetchAll, readItem } from './jobs.js';
 
 export const makeHandlers = (store) => ({
