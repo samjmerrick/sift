@@ -94,7 +94,7 @@ function typed(name, row) {
 function stored(name, col, v) {
   if (v === undefined) return null;
   if ((BOOL[name] ?? []).includes(col)) return v === null ? null : v ? 1 : 0;
-  if ((JSONC[name] ?? []).includes(col)) return v === null ? null : typeof v === 'string' ? v : JSON.stringify(v);
+  if ((JSONC[name] ?? []).includes(col)) return v === null ? null : JSON.stringify(v);
   if (typeof v === 'boolean') return v ? 1 : 0;
   if (v !== null && typeof v === 'object') return JSON.stringify(v);
   return v;
@@ -188,6 +188,35 @@ export async function rest(db, method, name, params, headers, body) {
  * Only the tables fetching touches are allowed.
  */
 const RUNNER = { sources: 'id', items: 'id', item_content: 'item_id' };
+
+const ID_COLS = ['id', 'topic_id', 'source_id', 'deck_id', 'item_id'];
+const TIME_COLS = ['last_fetched', 'published_at', 'fetched_at', 'seen_at', 'saved_at', 'due', 'introduced_at', 'created_at'];
+/** A row from the old database (Postgres types, or bee-database records) in the shape D1 stores. */
+function fromOld(table, row) {
+  const out = { ...row };
+  for (const c of ID_COLS) if (out[c] != null) out[c] = Number(out[c]);
+  for (const c of TIME_COLS) if (out[c] != null && !Number.isNaN(Date.parse(out[c]))) out[c] = new Date(out[c]).toISOString();
+  if (out.config && typeof out.config.deck_id === 'string' && /^\d+$/.test(out.config.deck_id)) out.config = { ...out.config, deck_id: Number(out.config.deck_id) };
+  for (const k of Object.keys(out)) if (!COLUMNS[table].includes(k)) delete out[k];
+  return out;
+}
+
+const WIPE_ORDER = ['item_content', 'saved_cards', 'cards', 'items', 'generators', 'sources', 'decks', 'topics', 'muted_domains', 'app_settings'];
+/** One-off copy from the old database: `reset` empties every table first; `rows` are inserted into `table`. */
+export async function importRows(db, { reset, table, rows }) {
+  if (reset) await db.batch(WIPE_ORDER.map((t) => db.prepare(`DELETE FROM ${t}`)));
+  if (!table) return 0;
+  if (!COLUMNS[table] || table === 'jobs') throw bad(`cannot import into "${table}"`);
+  const stmts = (rows ?? []).map((raw) => {
+    const row = withDefaults(table, fromOld(table, raw));
+    const keys = Object.keys(row);
+    return db.prepare(`INSERT INTO ${table} (${keys.map((k) => `"${k}"`).join(', ')}) VALUES (${keys.map(() => '?').join(', ')})`)
+      .bind(...keys.map((k) => stored(table, k, row[k])));
+  });
+  for (let i = 0; i < stmts.length; i += 50) await db.batch(stmts.slice(i, i + 50));
+  return stmts.length;
+}
+
 export async function applyOps(db, ops) {
   if (!Array.isArray(ops) || ops.length > 100) throw bad('ops must be a list of at most 100');
   const stmts = ops.map((o) => {

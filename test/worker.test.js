@@ -161,3 +161,17 @@ test('jobs: queue, claim, finish', async () => {
   assert.deepEqual(await failing, { ok: false, error: 'boom' });
   assert.equal((await runJob(d1, 'x', {}, { waitMs: 500 })).timedOut, true);
 });
+
+test('import from the old database: types converted, everything replaced', async () => {
+  const { importRows } = await import('../server/rest.js');
+  const d1 = localD1();
+  await importRows(d1, { reset: true });
+  await importRows(d1, { table: 'topics', rows: [{ id: '3', name: 'Old', color: '#fff', weight: 1, enabled: true, position: 1, kind: 'articles', extra: 'dropped' }] });
+  await importRows(d1, { table: 'sources', rows: [{ id: 5, topic_id: '3', kind: 'rss', name: 'S', config: { url: 'x', deck_id: '7' }, enabled: false, last_fetched: '2026-11-20 10:00:00+00' }] });
+  await importRows(d1, { table: 'app_settings', rows: [{ key: 'a', value: 'text' }, { key: 'b', value: { n: 1 } }] });
+  const src = (await call(d1, 'GET', 'sources'))[0];
+  assert.deepEqual([src.id, src.topic_id, src.enabled, src.config.deck_id, src.last_fetched], [5, 3, false, 7, '2026-11-20T10:00:00.000Z']);
+  assert.deepEqual((await call(d1, 'GET', 'app_settings', 'order=key')).map((s) => s.value), ['text', { n: 1 }]);
+  await importRows(d1, { reset: true });
+  assert.equal((await call(d1, 'GET', 'topics')).length, 0);
+});
