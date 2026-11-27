@@ -2,7 +2,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { localD1 } from './d1shim.js';
-import { createDb } from '../preview/mock-backend.js';
+import { createDb } from './mock-backend.js';
 import { rest, applyOps, HttpError } from '../server/rest.js';
 import { feedState } from '../server/feed.js';
 import { runJob, claim, finish } from '../server/jobs.js';

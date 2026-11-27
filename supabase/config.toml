@@ -1,6 +1,0 @@
-# Minimal Supabase CLI config. The project is linked in CI with `supabase link --project-ref`.
-project_id = "sift"
-
-[functions.sift-fetch]
-# The function checks the caller's session itself (see index.ts), so the gateway JWT check is off.
-verify_jwt = false

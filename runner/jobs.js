@@ -1,8 +1,8 @@
 // Fetching for Sift: the rules for pulling feeds, summaries and reader text, against a store (runner/store.js) that keeps the
 // rows in the Sift app on Cloudflare. The same rules as the Supabase version (supabase/functions/_shared/store.js and reader.js).
 // Used by runner/run.js (hourly, and for jobs the app queues).
-import { previewSource, normaliseUrl, titleKey, domainOf, get, decodeEntities, htmlToText, truncate } from '../supabase/functions/_shared/fetcher.js';
-import { sanitiseHtml, extractFor } from '../supabase/functions/_shared/reader.js';
+import { previewSource, normaliseUrl, titleKey, domainOf, get, decodeEntities, htmlToText, truncate } from './lib/fetcher.js';
+import { sanitiseHtml, extractFor } from './lib/reader.js';
 
 const DAY = 86400000;
 const iso = (d = new Date()) => new Date(d).toISOString();
