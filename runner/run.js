@@ -6,6 +6,7 @@
 //   RUNNER_TOKEN       the app's runner secret (the same value as the app's RUNNER_TOKEN secret)
 //   SIFT_FETCH_MINUTES how often to fetch every source; default 60, 0 turns it off
 import { makeHandlers } from './handlers.js';
+import { fetchAll } from './jobs.js';
 import { openRemote } from './store.js';
 
 const { SIFT_URL, RUNNER_TOKEN } = process.env;
