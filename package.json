@@ -8,9 +8,6 @@
     "fetch": "node scripts/fetch.js",
     "test": "node --test --test-concurrency=1 test/*.test.js",
     "preview": "node scripts/build-preview.js",
-    "bee:fetch": "node bee/fetch.js",
-    "bee:import": "node bee/import-supabase.js",
-    "bee:server": "node bee/server.js",
     "test:d1": "node --test --test-concurrency=1 test/worker.test.js test/runner.test.js",
     "runner": "node runner/run.js"
   },
@@ -19,7 +16,6 @@
   },
   "license": "MIT",
   "dependencies": {
-    "@modelcontextprotocol/sdk": "1.32.2",
     "@mozilla/readability": "0.6.0",
     "fast-xml-parser": "5.11.2",
     "linkedom": "0.18.15",
