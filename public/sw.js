@@ -1,6 +1,6 @@
 // App-shell cache so Sift opens instantly (and offline). Data requests always go to the network; saved articles
 // are kept for offline reading by the app itself (lib/offline.js, in IndexedDB).
-const CACHE = 'sift-v12';
+const CACHE = 'sift-v13';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'config.js', 'manifest.webmanifest', 'icon.svg', 'vendor/supabase-js-2.118.0.js',
   'lib/balance.js', 'lib/csv.js', 'lib/data.js', 'lib/feed.js', 'lib/generators.js', 'lib/offline.js', 'lib/packs.js', 'lib/rank.js', 'lib/sanitise.js', 'lib/source-kinds.js', 'lib/theory.js'];
 
@@ -8,12 +8,12 @@ self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).catch(() => {}).then(() => self.skipWaiting()));
 });
 self.addEventListener('activate', (e) => {
-  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
+  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k.startsWith('sift-') && k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim()));
 });
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
-  // Only same-origin app files — never Supabase API calls (the dev server serves those from the same origin).
-  if (e.request.method !== 'GET' || url.origin !== location.origin || /^\/(rest|auth|functions)\/v1\//.test(url.pathname)) return;
+  // Only same-origin app files — never API calls (bee and the dev server serve those from the same origin).
+  if (e.request.method !== 'GET' || url.origin !== location.origin || /\/(rest|auth|functions)\/v1\//.test(url.pathname)) return;
   // Network first, falling back to cache: you always get the latest version when online.
   e.respondWith(
     // cache: 'no-cache' revalidates with the server every time, so a new deploy shows up immediately.
