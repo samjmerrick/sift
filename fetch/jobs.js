@@ -1,6 +1,4 @@
-// Fetching for Sift: the rules for pulling feeds, summaries and reader text, against a store (runner/store.js) that keeps the
-// rows in the Sift app on Cloudflare. The same rules as the Supabase version (supabase/functions/_shared/store.js and reader.js).
-// Used by runner/run.js (hourly, and for jobs the app queues).
+// Fetching for Sift: the rules for pulling feeds, summaries and reader text, against a store (fetch/store.js).
 import { previewSource, normaliseUrl, titleKey, domainOf, get, decodeEntities, htmlToText, truncate } from './lib/fetcher.js';
 import { sanitiseHtml, extractFor } from './lib/reader.js';
 
@@ -116,7 +114,7 @@ export function prune(bee) {
   return old.length;
 }
 
-/** The hourly job: every source, then summaries, then housekeeping. */
+/** The timed job: every source, then summaries, then housekeeping. */
 export async function fetchAll(bee) {
   const results = await fetchSources(bee);
   const summaries = await enrichSummaries(bee);

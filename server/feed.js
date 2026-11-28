@@ -1,5 +1,4 @@
-// feed_state() for D1: one SQL statement that builds the whole JSON document in the database, so the Worker passes
-// the text through without parsing it (the free plan allows only 10 ms of CPU per request).
+// feed_state(): one SQL statement that builds the whole JSON document in the database.
 
 const obj = (alias, cols, { bools = [], jsons = [], skip = [] } = {}) =>
   `json_object(${cols.filter((c) => !skip.includes(c)).map((c) => {

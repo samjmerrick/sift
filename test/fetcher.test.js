@@ -2,7 +2,7 @@ import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { readFileSync } from 'node:fs';
-import { previewSource, normaliseUrl, htmlToText, truncate, keywordRegex } from '../runner/lib/fetcher.js';
+import { previewSource, normaliseUrl, htmlToText, truncate, keywordRegex } from '../fetch/lib/fetcher.js';
 
 let server, base;
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8')

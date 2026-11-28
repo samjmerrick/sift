@@ -1,16 +1,20 @@
 # Sift
 
-A self-hosted, infinitely scrolling feed of useful things to read and practise. It's a web app you add to your phone's home screen. This copy runs as a Cloudflare Worker with its own D1 database behind Cloudflare Access (see [Running on Cloudflare](#running-on-cloudflare)); You choose the topics; nobody else's algorithm is involved.
+A self-hosted, infinitely scrolling feed of useful things to read and practise. It's a web app you add to your phone's home screen. You choose the topics; nobody else's algorithm is involved.
 
-## Running on Cloudflare
+## Running it
 
-This is how the author runs it, as an app of the Bee platform (`samjmerrick/bee-kit`).
+This is a docker app on the author's own server (the "bee" apps platform: Caddy plus a shared PocketBase), served at `/sift/`.
 
-- `server/` is the Worker. It serves the page and answers the PostgREST-style calls the app's supabase-js client makes (`server/rest.js`), builds `feed_state` in one SQL statement (`server/feed.js`) and queues slow work in the `jobs` table (`server/jobs.js`).
-- `migrations/` is the D1 schema. `app.json` is the app's manifest: its path, the project whose roles apply (viewer reads, editor changes) and the `/_bee` path that skips Access.
-- `runner/` fetches feeds and reads articles, because that needs more CPU than the free Workers plan gives a request. It long-polls `/sift/_bee/jobs` with a bearer token (the app's `RUNNER_TOKEN` secret), and fetches every source hourly. Run it anywhere with Docker: put `SIFT_URL` and `RUNNER_TOKEN` in `.env` and `docker compose up -d --build`.
-- Pushing to `main` runs the tests (`npm run test:d1`) and deploys with the bee-kit action; the repository needs the `CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` secrets.
-- The D1 `feed_state` result is one database cell (limit 2 MB); with 1,000 items it is about 0.8 MB.
+- `server/` serves the page and answers the PostgREST-style calls the app's supabase-js client makes (`server/rest.js`), and builds `feed_state` in one SQL statement (`server/feed.js`). Rows live in one SQLite file, `$DATA_DIR/sift.db`.
+- `fetch/` pulls feeds and reads articles, on demand and for every source hourly.
+- `migrations/` is the schema, applied at start. To change it, add a numbered file.
+- Sign-in is Google, through the platform's PocketBase (`public/login.js`). Sift then sets its own cookie, only for verified addresses listed in `SIFT_EMAILS`.
+- A copy of the database is written to `$DATA_DIR/backups` daily (the newest 3 are kept).
+
+The Dockerfile builds it. Settings are environment variables: `SIFT_EMAILS`, `PB_URL` (default `http://pocketbase:8090`), `DATA_DIR`, `PORT` (default 8000) and `SIFT_FETCH_MINUTES` (default 60, 0 turns it off). It expects to be behind HTTPS (the cookie is `Secure`) with the request path left as `/sift/...`.
+
+`node server/import.js <db> <rows.json>...` loads rows exported from another copy.
 
 **No LLM involved.** Everything is curated by rules you control:
 
@@ -72,7 +76,7 @@ A topic page has a **Sources** list (article topics) or a **Card types** list (c
 
 ### Reading in the app and muting domains
 
-- **In-app reader**: opening an article extracts its readable text through the Edge Function (Mozilla Readability), strips it down to a strict allowlist of safe HTML and caches it in `item_content`, so it's fetched once. Feeds that publish full text (`content:encoded` or Atom `<content>`, 1,500+ characters) are stored at fetch time with no extra request. Pages that can't be extracted are recorded as failed and retried after 24 hours.
+- **In-app reader**: opening an article extracts its readable text on the server (Mozilla Readability), strips it down to a strict allowlist of safe HTML and caches it in `item_content`, so it's fetched once. Feeds that publish full text (`content:encoded` or Atom `<content>`, 1,500+ characters) are stored at fetch time with no extra request. Pages that can't be extracted are recorded as failed and retried after 24 hours.
 - **Muted domains**: a domain in `muted_domains` never appears in the feed (`feed_state` filters it out). Existing items are kept, just hidden.
 
 ### Tips for good sources
@@ -124,10 +128,11 @@ Upgrading an existing install: the `topic_kind` migration turns topics with only
 
 ```
 npm ci
-npm test          # unit tests, the D1 build against the mock backend, and the job path end to end
+npm test                              # unit tests, the queries against the mock backend, and the server end to end
+SIFT_EMAILS=you@example.com PB_URL=http://127.0.0.1:8768 npm start
 ```
 
-The Worker's tests run on `node:sqlite` with the real migrations (`test/d1shim.js`), and `test/mock-backend.js` is the in-memory stand-in the app was built against, used as the reference for what the API must answer. To change the schema, add a numbered file to `migrations/`; the deploy applies it.
+The server tests run on an in-memory database with the real migrations; `test/mock-backend.js` is the in-memory stand-in the app was built against, used as the reference for what the API must answer.
 
 ## License
 

@@ -2,7 +2,7 @@ import { test, before, after } from 'node:test';
 import { createServer } from 'node:http';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { sanitiseHtml, extractArticle } from '../runner/lib/reader.js';
+import { sanitiseHtml, extractArticle } from '../fetch/lib/reader.js';
 
 const fixture = (name) => readFileSync(new URL(`./fixtures/${name}`, import.meta.url), 'utf8')
   .replaceAll('RECENT_RFC', new Date(Date.now() - 3600e3).toUTCString());
