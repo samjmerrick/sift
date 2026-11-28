@@ -1,7 +1,5 @@
-// An in-memory stand-in for the parts of Supabase that Sift uses, for the self-contained preview build
-// (npm run preview). It answers supabase-js's HTTP calls (PostgREST subset, password sign-in, the sift-fetch
-// function) the same way scripts/dev.js does, but from plain arrays in the page instead of a Postgres database,
-// so app.js, lib/data.js and supabase-js run unchanged. Everything resets when the page reloads.
+// An in-memory model of the API the app was built against (from its Supabase days). The tests use it as the
+// reference for what server/ must answer.
 
 const DAY = 86400000;
 const iso = (ms) => new Date(ms).toISOString();
@@ -24,7 +22,7 @@ const KEY = { muted_domains: 'domain', app_settings: 'key', item_content: 'item_
 
 /**
  * `onChange(op, table, row, patch?)` hears every insert, update and delete (cascades included) made through the
- * PostgREST layer. bee/server.js uses it to save changes to the personal database.
+ * PostgREST layer.
  */
 export function createDb({ onChange } = {}) {
   const t = Object.fromEntries(Object.keys(DEFAULTS).map((k) => [k, []]));

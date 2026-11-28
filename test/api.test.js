@@ -1,11 +1,10 @@
-// The D1 build against the in-memory mock backend (the oracle for what the app expects): same data in, same answers out.
+// The server's queries against the in-memory mock backend (the oracle for what the app expects): same data in, same answers out.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { localD1 } from './d1shim.js';
+import { openDb } from '../server/db.js';
 import { createDb } from './mock-backend.js';
 import { rest, applyOps, HttpError } from '../server/rest.js';
 import { feedState } from '../server/feed.js';
-import { runJob, claim, finish } from '../server/jobs.js';
 
 const H = (o = {}) => new Headers(o);
 const q = (s) => new URLSearchParams(s);
@@ -14,7 +13,7 @@ const now = Date.now();
 const HOUR = 3600000;
 
 async function seeded() {
-  const d1 = localD1();
+  const d1 = openDb();
   const mock = createDb();
   const both = async (table, row) => { mock.insert(table, structuredClone(row)); await rest(d1, 'POST', table, q(''), H(), row); };
   await both('topics', { name: 'News', position: 2 });
@@ -130,10 +129,10 @@ test('unknown tables, columns and filters are refused', async () => {
   await assert.rejects(rest(d1, 'GET', 'items', q('select=id;drop'), H()), (e) => e.status === 400);
   await assert.rejects(rest(d1, 'GET', 'items', q('nope=eq.1'), H()), (e) => e.status === 400);
   await assert.rejects(rest(d1, 'GET', 'items', q('id=like.*a*'), H()), (e) => e.status === 400);
-  await assert.rejects(rest(d1, 'PATCH', 'jobs', q(''), H(), { status: 'done' }), (e) => e.status === 404);
+  await assert.rejects(rest(d1, 'PATCH', '_migrations', q(''), H(), { name: 'x' }), (e) => e.status === 404);
 });
 
-test('runner ops: insert (ignoring duplicates), patch, remove', async () => {
+test('fetcher ops: insert (ignoring duplicates), patch, remove', async () => {
   const { d1 } = await seeded();
   const row = { id: 50, source_id: 1, topic_id: 1, url: 'https://a.example/new', title: 'New', title_key: 'new', published_at: iso(now) };
   assert.equal(await applyOps(d1, [{ op: 'insert', table: 'items', row }, { op: 'insert', table: 'items', row },
@@ -146,18 +145,3 @@ test('runner ops: insert (ignoring duplicates), patch, remove', async () => {
   await assert.rejects(applyOps(d1, [{ op: 'insert', table: 'topics', row: { name: 'x' } }]), HttpError);
 });
 
-test('jobs: queue, claim, finish', async () => {
-  const d1 = localD1();
-  const waiting = runJob(d1, 'read', { item: { id: 1 } }, { waitMs: 5000 });
-  const job = await claim(d1, 3000);
-  assert.equal(job.kind, 'read');
-  assert.deepEqual(job.input, { item: { id: 1 } });
-  assert.equal(await claim(d1, 100), null);
-  await finish(d1, job.id, { result: { status: 'ok' } });
-  assert.deepEqual(await waiting, { ok: true, result: { status: 'ok' } });
-  const failing = runJob(d1, 'fetch_all', {}, { waitMs: 5000 });
-  const j2 = await claim(d1, 3000);
-  await finish(d1, j2.id, { error: 'boom' });
-  assert.deepEqual(await failing, { ok: false, error: 'boom' });
-  assert.equal((await runJob(d1, 'x', {}, { waitMs: 500 })).timedOut, true);
-});

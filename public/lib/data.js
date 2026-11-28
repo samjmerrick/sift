@@ -1,4 +1,4 @@
-// All reads/writes go straight to Supabase (Postgres + row level security). No custom server.
+// All reads and writes go through supabase-js, which talks to Sift's own server (server/).
 import { normaliseState } from './feed.js';
 import { parseCsv } from './csv.js';
 
@@ -18,7 +18,10 @@ export function createData(client, { bee = false } = {}) {
     async session() { return bee ? {} : check(await client.auth.getSession()).session; },
     async signIn(email, password) { return check(await client.auth.signInWithPassword({ email, password })); },
     async signOut() {
-      if (bee) await fetch('logout', { method: 'POST', redirect: 'follow' });
+      if (bee) {
+        localStorage.setItem('sift-signed-out', '1'); // so the sign-in page waits for you
+        await fetch('logout', { method: 'POST' });
+      }
       else await client.auth.signOut();
     },
 

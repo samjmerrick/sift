@@ -1,5 +1,4 @@
 node_modules/
-# Written by you (local dev) or by the deploy workflow from repository variables; never committed.
-public/config.js
-dist/
+data/
 .env
+**/.DS_Store

@@ -1,4 +1,4 @@
-// A PostgREST-compatible subset over D1: the calls Sift's supabase-js client makes (select with filters, order,
+// A PostgREST-compatible subset over SQLite: the calls Sift's supabase-js client makes (select with filters, order,
 // limit and offset; insert; update; delete; the read-only views). Every table, column and operator is whitelisted,
 // and values are always bound parameters. Rows come back typed the way Postgres returned them (booleans, JSON).
 
@@ -184,15 +184,15 @@ export async function rest(db, method, name, params, headers, body) {
 }
 
 /**
- * Changes from the runner on bee, applied in one batch: [{op:'insert',table,row} | {op:'patch',table,id,patch} | {op:'remove',table,id}].
+ * Changes from the fetcher, applied in one batch: [{op:'insert',table,row} | {op:'patch',table,id,patch} | {op:'remove',table,id}].
  * Only the tables fetching touches are allowed.
  */
-const RUNNER = { sources: 'id', items: 'id', item_content: 'item_id' };
+const FETCHED = { sources: 'id', items: 'id', item_content: 'item_id' };
 
 export async function applyOps(db, ops) {
   if (!Array.isArray(ops) || ops.length > 100) throw bad('ops must be a list of at most 100');
   const stmts = ops.map((o) => {
-    const key = RUNNER[o?.table];
+    const key = FETCHED[o?.table];
     if (!key) throw bad(`cannot change "${o?.table}"`);
     const allowed = COLUMNS[o.table];
     if (o.op === 'insert') {

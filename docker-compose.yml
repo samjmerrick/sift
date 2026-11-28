@@ -1,9 +1,0 @@
-# The Sift runner on bee. Needs a .env next to this file with:
-#   SIFT_URL=https://apps.samjmerrick.com/sift
-#   RUNNER_TOKEN=<the app's RUNNER_TOKEN secret>
-services:
-  sift-runner:
-    build: .
-    container_name: sift-runner
-    restart: unless-stopped
-    env_file: .env
