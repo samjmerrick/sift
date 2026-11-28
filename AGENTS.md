@@ -31,4 +31,4 @@ Node 22.13 or later (`node:sqlite`).
 
 ## Deployment
 
-The Dockerfile is the build. The host's apps platform (outside this repo) builds it as the `sift` service behind Caddy, with `/data` mounted and sign-in through its shared PocketBase. Pushing to this repo does not by itself deploy it unless that platform is set to follow the repo. Check with the owner before deploying or pushing to `main`.
+The Dockerfile is the build. The host's apps platform (outside this repo) follows `main`: it builds it as the `sift` service behind Caddy, with `/data` mounted and sign-in through its shared PocketBase. **Merging to `main` therefore deploys**, within about 15 minutes. Check with the owner before merging or pushing there.
