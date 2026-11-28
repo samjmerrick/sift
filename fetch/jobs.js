@@ -11,11 +11,11 @@ async function pool(list, n, fn) {
 }
 
 /** Fetch the given sources (default: every enabled one). Returns { [source name]: { added, error? } }. */
-export async function fetchSources(bee, sources = bee.rows('sources').filter((s) => s.enabled !== false)) {
-  const items = bee.rows('items');
+export async function fetchSources(store, sources = store.rows('sources').filter((s) => s.enabled !== false)) {
+  const items = store.rows('items');
   const byUrl = new Map(items.map((i) => [i.url, i]));
   const recentKeys = new Set(items.filter((i) => Date.parse(i.fetched_at) > Date.now() - 14 * DAY).map((i) => i.title_key));
-  let nextId = bee.nextId('items');
+  let nextId = store.nextId('items');
   const results = {};
   await pool(sources, 3, async (src) => {
     let added = 0;
@@ -27,7 +27,7 @@ export async function fetchSources(bee, sources = bee.rows('sources').filter((s)
         const key = titleKey(i.title || '');
         if (!key) continue;
         const old = byUrl.get(url);
-        if (old && i.community_score != null) bee.patch('items', old.id, { community_score: i.community_score, comment_count: i.comment_count ?? null });
+        if (old && i.community_score != null) store.patch('items', old.id, { community_score: i.community_score, comment_count: i.comment_count ?? null });
         if (old || recentKeys.has(key)) continue;
         const item = {
           id: nextId++, source_id: src.id, topic_id: src.topic_id, url, title: i.title.trim(), title_key: key,
@@ -36,29 +36,29 @@ export async function fetchSources(bee, sources = bee.rows('sources').filter((s)
           published_at: iso(Math.min(i.published || Date.now(), Date.now())), fetched_at: iso(now),
           seen_at: null, reaction: 0, saved_at: null,
         };
-        bee.insert('items', item);
+        store.insert('items', item);
         byUrl.set(url, item); recentKeys.add(key); added++;
         if (i.content_html) {
           const clean = sanitiseHtml(i.content_html, url);
-          bee.insert('item_content', { item_id: item.id, status: 'ok', title: item.title, byline: null, site_name: null, html: clean,
+          store.insert('item_content', { item_id: item.id, status: 'ok', title: item.title, byline: null, site_name: null, html: clean,
             text_length: htmlToText(clean).length, lead_image: item.image, error: null, fetched_at: iso(now) });
         }
       }
-      bee.patch('sources', src.id, { last_fetched: iso(now), last_error: null });
+      store.patch('sources', src.id, { last_fetched: iso(now), last_error: null });
       results[src.name] = { added };
     } catch (err) {
       const message = String(err?.message || err).slice(0, 500);
-      bee.patch('sources', src.id, { last_fetched: iso(), last_error: message });
+      store.patch('sources', src.id, { last_fetched: iso(), last_error: message });
       results[src.name] = { added, error: message };
     }
   });
-  await bee.flush();
+  await store.flush();
   return results;
 }
 
 /** Fill in missing summaries from the page's meta description (capped per run). Returns how many were checked. */
-export async function enrichSummaries(bee, limit = 25) {
-  const rows = bee.rows('items')
+export async function enrichSummaries(store, limit = 25) {
+  const rows = store.rows('items')
     .filter((i) => i.summary === '' && !i.seen_at && !/news\.ycombinator\.com/.test(i.url))
     .sort((a, b) => Date.parse(b.fetched_at) - Date.parse(a.fetched_at)).slice(0, limit);
   await pool(rows, 4, async (row) => {
@@ -74,14 +74,14 @@ export async function enrichSummaries(bee, limit = 25) {
       const img = meta('og:image');
       image = /^https?:/.test(img) ? img : null;
     } catch { /* keep the space */ }
-    bee.patch('items', row.id, row.image || !image ? { summary } : { summary, image },
+    store.patch('items', row.id, row.image || !image ? { summary } : { summary, image },
       { content: [row.title, summary.trim(), row.url].filter(Boolean).join('\n') });
   });
   return rows.length;
 }
 
 /** Extract and store one item's reader text. Returns the item_content row. */
-export async function readItem(bee, item) {
+export async function readItem(store, item) {
   let row;
   try {
     const a = await extractFor(item);
@@ -90,35 +90,35 @@ export async function readItem(bee, item) {
     row = { status: 'failed', title: null, byline: null, site_name: null, html: '', text_length: 0, lead_image: null, error: String(err?.message || err).slice(0, 300) };
   }
   const full = { item_id: item.id, ...row, fetched_at: iso() };
-  bee.remove('item_content', item.id); // an old failure, if any
-  bee.insert('item_content', full);
-  await bee.flush();
+  store.remove('item_content', item.id); // an old failure, if any
+  store.insert('item_content', full);
+  await store.flush();
   return full;
 }
 
 /** Cached reader text for an item, fetching it on first request (failures are retried after a day). */
-export async function getContent(bee, item) {
-  let row = await bee.content(item.id);
-  if (!row || (row.status === 'failed' && Date.now() - Date.parse(row.fetched_at) > DAY)) row = await readItem(bee, item);
+export async function getContent(store, item) {
+  let row = await store.content(item.id);
+  if (!row || (row.status === 'failed' && Date.now() - Date.parse(row.fetched_at) > DAY)) row = await readItem(store, item);
   const { status, title, byline, site_name, html, text_length, lead_image, error } = row;
   return { status, title: title ?? item.title ?? null, byline, site_name, html, text_length, lead_image, error, url: item.url };
 }
 
 /** Drop old, unsaved articles and their reader text. Returns how many went. */
-export function prune(bee) {
+export function prune(store) {
   const cutoffSeen = Date.now() - 30 * DAY;
   const cutoffFetched = Date.now() - 60 * DAY;
-  const old = bee.rows('items').filter((i) => !i.saved_at
+  const old = store.rows('items').filter((i) => !i.saved_at
     && ((i.seen_at && Date.parse(i.seen_at) < cutoffSeen) || Date.parse(i.fetched_at) < cutoffFetched));
-  for (const i of old) { bee.remove('items', i.id); bee.remove('item_content', i.id); }
+  for (const i of old) { store.remove('items', i.id); store.remove('item_content', i.id); }
   return old.length;
 }
 
 /** The timed job: every source, then summaries, then housekeeping. */
-export async function fetchAll(bee) {
-  const results = await fetchSources(bee);
-  const summaries = await enrichSummaries(bee);
-  const removed = prune(bee);
-  await bee.flush();
+export async function fetchAll(store) {
+  const results = await fetchSources(store);
+  const summaries = await enrichSummaries(store);
+  const removed = prune(store);
+  await store.flush();
   return { results, summaries, removed };
 }
